@@ -1,0 +1,11 @@
+{
+  "name": "snapproof-sui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SnapProof - Photo evidence timestamping on Sui",
+  "scripts": {
+    "mobile": "cd mobile && npx expo start",
+    "backend": "cd backend && npm run dev",
+    "build:backend": "cd backend && npm run build"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "SnapProof",
+    "slug": "snapproof",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "snapproof",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#1a1a2e"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.snapproof.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SnapProof needs camera access to capture photo evidence.",
+        "NSLocationWhenInUseUsageDescription": "SnapProof uses your location to tag evidence with a coarse geolocation."
+      }
+    },
+    "android": {
+      "package": "com.snapproof.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a2e"
+      },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      "expo-location",
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}
