@@ -15,6 +15,7 @@ import * as ImagePicker from "expo-image-picker";
 import { hashImage } from "../src/utils/hash";
 import { lookupProofByImageHash, getProofById } from "../src/services/sui";
 import { SUI_NETWORK, WALRUS_AGGREGATOR_URL } from "../src/config";
+import { track, captureException } from "../src/services/analytics";
 import type { ProofData } from "../src/types/proof";
 
 function showAlert(title: string, message: string) {
@@ -64,6 +65,9 @@ export default function VerifyScreen() {
       return;
     }
 
+    const startedAt = Date.now();
+    track({ name: "verify_started", props: { mode: "image" } });
+
     try {
       setLoading(true);
       setResult(null);
@@ -85,12 +89,25 @@ export default function VerifyScreen() {
         setFoundProof(proof);
         setFoundTxDigest(lookup.txDigest);
         setResult("match");
+        track({
+          name: "verify_result",
+          props: { result: "match", mode: "image", durationMs: Date.now() - startedAt },
+        });
       } else {
         setResult("not_found");
+        track({
+          name: "verify_result",
+          props: { result: "not_found", mode: "image", durationMs: Date.now() - startedAt },
+        });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       setErrorMsg(msg);
+      captureException(error, { where: "verifyByImage" });
+      track({
+        name: "verify_result",
+        props: { result: "error", mode: "image", error: msg.slice(0, 200) },
+      });
     } finally {
       setLoading(false);
       setStatusText("");
@@ -103,16 +120,28 @@ export default function VerifyScreen() {
       return;
     }
 
+    track({ name: "verify_started", props: { mode: "hash" } });
+
     try {
       setLoading(true);
       setErrorMsg("");
       setStatusText("Computing image hash...");
       const hash = await hashImage(imageUri);
       setComputedHash(hash);
-      setResult(hash === expectedHash.trim() ? "match" : "mismatch");
+      const matched = hash === expectedHash.trim();
+      setResult(matched ? "match" : "mismatch");
+      track({
+        name: "verify_result",
+        props: { result: matched ? "match" : "mismatch", mode: "hash" },
+      });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       setErrorMsg(msg);
+      captureException(error, { where: "verifyByHash" });
+      track({
+        name: "verify_result",
+        props: { result: "error", mode: "hash", error: msg.slice(0, 200) },
+      });
     } finally {
       setLoading(false);
       setStatusText("");

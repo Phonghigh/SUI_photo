@@ -22,6 +22,7 @@ Start here if you're contributing code, reviewing the design, or integrating aga
 - [`dev/DATA_MODEL.md`](./dev/DATA_MODEL.md) — canonical field reference for on-chain, off-chain, and storage.
 - [`dev/SETUP.md`](./dev/SETUP.md) — clone-to-running instructions for all three workspaces, plus troubleshooting.
 - [`dev/GLOSSARY.md`](./dev/GLOSSARY.md) — one-line definitions for every domain term.
+- [`dev/ROADMAP.md`](./dev/ROADMAP.md) — prioritized enhancements to take SnapProof from MVP to product: mini-PRDs across product/UX, trust, GTM, and technical robustness.
 
 ## At a glance
 
@@ -35,7 +36,8 @@ snapproof-sui/
     ├── overview/         OVERVIEW.md, DEMO.md
     └── dev/              ARCHITECTURE.md, WORKFLOWS.md, MOBILE.md,
                           CONTRACTS.md, BACKEND.md, API.md,
-                          DATA_MODEL.md, SETUP.md, GLOSSARY.md
+                          DATA_MODEL.md, SETUP.md, GLOSSARY.md,
+                          ROADMAP.md
 ```
 
 ## Reading orders
@@ -49,3 +51,5 @@ snapproof-sui/
 **I need to integrate via HTTP:** `dev/DATA_MODEL.md` → `dev/API.md`.
 
 **I want to extend the on-chain schema:** `dev/DATA_MODEL.md` → `dev/CONTRACTS.md` → `dev/WORKFLOWS.md` section 9 ("Add a new field to a proof").
+
+**I'm planning what to build next:** `overview/OVERVIEW.md` → `dev/ROADMAP.md`.

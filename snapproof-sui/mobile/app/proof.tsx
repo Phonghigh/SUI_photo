@@ -6,8 +6,10 @@ import {
   Linking,
   ScrollView,
   Share,
+  Alert,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { SUI_NETWORK, WALRUS_AGGREGATOR_URL } from "../src/config";
 
 export default function ProofScreen() {
@@ -65,6 +67,16 @@ export default function ProofScreen() {
     }
   };
 
+  const copyWebLink = async () => {
+    if (!params.objectId) {
+      Alert.alert("Error", "No Object ID available for this proof yet.");
+      return;
+    }
+    const webUrl = `http://localhost:3000/p/${params.objectId}`;
+    await Clipboard.setStringAsync(webUrl);
+    Alert.alert("Link Copied", "The web verification link has been copied to your clipboard.");
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Success badge */}
@@ -117,9 +129,15 @@ export default function ProofScreen() {
       </View>
 
       {/* Actions */}
-      <TouchableOpacity style={styles.shareButton} onPress={shareProof}>
-        <Text style={styles.shareButtonText}>Share Proof</Text>
-      </TouchableOpacity>
+      <View style={styles.actionRow}>
+        <TouchableOpacity style={[styles.actionButton, styles.copyLinkButton]} onPress={copyWebLink}>
+          <Text style={styles.actionButtonText}>Copy Link</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={[styles.actionButton, styles.shareButton]} onPress={shareProof}>
+          <Text style={styles.actionButtonText}>Share Proof</Text>
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity
         style={styles.homeButton}
@@ -225,14 +243,24 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "500",
   },
-  shareButton: {
-    backgroundColor: "#533483",
+  actionRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 12,
+  },
+  actionButton: {
+    flex: 1,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: "center",
-    marginBottom: 12,
   },
-  shareButtonText: {
+  copyLinkButton: {
+    backgroundColor: "#0f3460",
+  },
+  shareButton: {
+    backgroundColor: "#533483",
+  },
+  actionButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",

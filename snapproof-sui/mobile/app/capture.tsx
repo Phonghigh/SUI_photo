@@ -23,6 +23,7 @@ import { uploadToWalrus } from "../src/services/walrus";
 import { createProofOnSui, getBalance } from "../src/services/sui";
 import { getAddress, requestTestnetTokens } from "../src/services/wallet";
 import { logger } from "../src/utils/logger";
+import { track, captureException, setUser } from "../src/services/analytics";
 import type { ProofData } from "../src/types/proof";
 
 /** Cross-platform alert that works on web too */
@@ -60,6 +61,7 @@ export default function CaptureScreen() {
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
+      track({ name: "permission_granted", props: { permission: "location", result: status } });
       if (status === "granted") {
         setLocationStatus("granted");
         const loc = await Location.getCurrentPositionAsync({
@@ -75,6 +77,7 @@ export default function CaptureScreen() {
     } catch (error) {
       console.warn("Location error:", error);
       setLocationStatus("denied");
+      captureException(error, { where: "requestLocationPermission" });
     }
   };
 
@@ -82,11 +85,16 @@ export default function CaptureScreen() {
     try {
       const addr = await getAddress();
       setWalletAddress(addr);
+      setUser(addr);
       const bal = await getBalance();
       const suiBalance = Number(bal) / 1_000_000_000;
       setBalance(suiBalance.toFixed(4));
+      if (suiBalance > 0) {
+        track({ name: "wallet_funded", props: { balanceSui: suiBalance } });
+      }
     } catch (error) {
       console.warn("Wallet init error:", error);
+      captureException(error, { where: "initWallet" });
     }
   };
 
@@ -94,9 +102,11 @@ export default function CaptureScreen() {
     setStatus("Requesting testnet tokens...");
     setErrorMsg("");
     setLoading(true);
+    track({ name: "faucet_requested" });
     const success = await requestTestnetTokens();
     setLoading(false);
     setStatus("");
+    track({ name: "faucet_result", props: { success } });
     if (success) {
       showAlert("Success", "Testnet SUI tokens received!");
       await initWallet();
@@ -138,16 +148,22 @@ export default function CaptureScreen() {
     logger.info("CAPTURE", "Starting submission flow", { imageUri });
     setErrorMsg("");
 
+    const startedAt = Date.now();
+    track({ name: "proof_submit_started", props: { hasLocation: !!currentLocation } });
+
+    let stage: string = "init";
     try {
       setLoading(true);
 
       // Step 1: Hash the image
+      stage = "hash_image";
       setStatus("Hashing image...");
       logger.debug("CAPTURE", "Step 1: Hashing image...");
       const imageHash = await hashImage(imageUri);
       logger.info("CAPTURE", "Image hash generated", { imageHash });
 
       // Step 2: Extract and hash metadata
+      stage = "hash_metadata";
       setStatus("Processing metadata...");
       logger.debug("CAPTURE", "Step 2: Processing metadata...");
       const metadata = await extractMetadata(imageUri, exif ?? undefined);
@@ -155,10 +171,12 @@ export default function CaptureScreen() {
       logger.info("CAPTURE", "Metadata hash generated", { metadataHash });
 
       // Step 3: Compute combined proof hash
+      stage = "hash_proof";
       const proofHash = await computeProofHash(imageHash, metadataHash);
       logger.info("CAPTURE", "Combined proof hash generated", { proofHash });
 
       // Step 4: Capture location
+      stage = "geohash";
       setStatus("Capturing location...");
       logger.debug("CAPTURE", "Step 4: Processing location...");
       let coarseGeoHash = "";
@@ -174,12 +192,14 @@ export default function CaptureScreen() {
       }
 
       // Step 5: Upload to Walrus
+      stage = "walrus_upload";
       setStatus("Uploading to Walrus...");
       logger.debug("CAPTURE", "Step 5: Uploading to Walrus...");
       const walrusResult = await uploadToWalrus(imageUri);
       logger.info("CAPTURE", "Walrus upload complete", { blobId: walrusResult.blobId });
 
       // Step 6: Create proof on Sui
+      stage = "sui_tx";
       setStatus("Creating proof on Sui...");
       logger.debug("CAPTURE", "Step 6: Creating proof on Sui...");
       const proof: ProofData = {
@@ -195,6 +215,15 @@ export default function CaptureScreen() {
       logger.info("CAPTURE", "Sui transaction successful", { txDigest, objectId });
 
       setLoading(false);
+
+      track({
+        name: "proof_submit_succeeded",
+        props: {
+          durationMs: Date.now() - startedAt,
+          hasGeoHash: !!coarseGeoHash,
+          walrusBlobId: walrusResult.blobId,
+        },
+      });
 
       // Navigate to proof receipt
       router.push({
@@ -214,9 +243,19 @@ export default function CaptureScreen() {
     } catch (error) {
       setLoading(false);
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("CAPTURE", "Submission failed", { error: message });
+      logger.error("CAPTURE", "Submission failed", { error: message, stage });
       setErrorMsg(message);
       setStatus("");
+
+      track({
+        name: "proof_submit_failed",
+        props: {
+          stage,
+          durationMs: Date.now() - startedAt,
+          error: message.slice(0, 200),
+        },
+      });
+      captureException(error, { stage, where: "submitProof" });
 
       if (message.includes("No valid gas") || message.includes("balance")) {
         setErrorMsg(

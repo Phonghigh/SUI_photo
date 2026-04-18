@@ -1,6 +1,6 @@
 {
   "name": "snapproof-backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -11,8 +11,11 @@
   "dependencies": {
     "express": "^4.21.0",
     "cors": "^2.8.5",
+    "express-rate-limit": "^7.4.0",
     "@mysten/sui": "^1.0.0",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

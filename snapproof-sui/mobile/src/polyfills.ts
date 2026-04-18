@@ -1,8 +1,3 @@
-/**
- * Polyfills required for the Sui SDK to work in React Native.
- * Must be imported before any Sui SDK usage.
- */
-
 // Ensure crypto.getRandomValues is available globally
 if (typeof global !== "undefined" && !global.crypto) {
   // React Native environment — use expo-crypto as fallback

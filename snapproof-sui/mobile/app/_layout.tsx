@@ -1,8 +1,16 @@
-import "../src/polyfills";
+import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { initAnalytics, track } from "../src/services/analytics";
 
 export default function RootLayout() {
+  useEffect(() => {
+    // Fire-and-forget: initialize Sentry (if configured) and emit app_opened.
+    initAnalytics().then(() => {
+      track({ name: "app_opened" });
+  });
+  }, []);
+
   return (
     <>
       <StatusBar style="light" />
