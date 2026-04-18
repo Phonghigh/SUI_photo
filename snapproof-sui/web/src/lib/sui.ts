@@ -1,4 +1,4 @@
-import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+import { SuiClient } from '@mysten/sui/client';
 
 export const SUI_NETWORK = 'testnet';
 export const WALRUS_AGGREGATOR_URL = 'https://aggregator.walrus-testnet.walrus.space';
@@ -14,7 +14,7 @@ export interface PhotoProof {
   coarseGeoHash?: string;
 }
 
-const client = new SuiClient({ url: getFullnodeUrl(SUI_NETWORK) });
+const client = new SuiClient({ url: 'https://fullnode.testnet.sui.io:443' });
 
 export async function getProofById(objectId: string): Promise<PhotoProof | null> {
   try {
