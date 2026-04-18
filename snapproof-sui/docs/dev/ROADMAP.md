@@ -26,7 +26,10 @@ Every PRD below should tie back to one of these metrics or to a named risk reduc
 
 Quick wins. Each assumes one developer and existing infrastructure.
 
-## A1 — Shareable proof links + web-based verifier (Recommended first ship)
+> **Status (2026-04-19): A1–A6 shipped.** See [`CHANGELOG.md`](../../CHANGELOG.md)
+> for the per-workspace change list.
+
+## A1 — Shareable proof links + web-based verifier (Recommended first ship) ✅ Shipped
 
 **Problem.** A proof is only valuable if someone else can verify it. Right now verification requires installing the Expo app and rehashing the original image locally. Sharing a receipt produces a block of text nobody outside crypto understands.
 
@@ -52,7 +55,7 @@ Mobile receipt adds a "Copy link" button next to Share.
 
 ---
 
-## A2 — Camera-only, live hash preview
+## A2 — Camera-only, live hash preview ✅ Shipped
 
 **Problem.** Today, users can pick an image from the library. This weakens the provenance claim ("the user had the image before they submitted it"). It also means the app can be fed arbitrary bytes — EXIF date doesn't help, any file can be backdated.
 
@@ -72,7 +75,7 @@ Mobile receipt adds a "Copy link" button next to Share.
 
 ---
 
-## A3 — Onboarding that calibrates trust
+## A3 — Onboarding that calibrates trust ✅ Shipped
 
 **Problem.** First-time users don't know what SnapProof claims and what it doesn't. A naive user might think it "proves the photo is real." Under-promising here protects us legally and reputationally — and under-promising is *more* trustworthy than over-promising.
 
@@ -94,7 +97,7 @@ Add a persistent **Info (i)** icon on Capture and Verify that resurfaces the sam
 
 ---
 
-## A4 — Offline submission queue
+## A4 — Offline submission queue ✅ Shipped
 
 **Problem.** Photojournalists in the field, hikers, travelers, and NGOs often capture when online is spotty. Right now a failed upload loses progress; the user has to manually retry.
 
@@ -117,7 +120,7 @@ Implementation: `@react-native-community/netinfo` for connectivity, `expo-sqlite
 
 ---
 
-## A5 — Technical: add crash reporting & analytics
+## A5 — Technical: add crash reporting & analytics ✅ Shipped
 
 **Problem.** We're going to ship faster than we can manually QA. Without telemetry we're flying blind.
 
@@ -138,7 +141,7 @@ Implementation: `@react-native-community/netinfo` for connectivity, `expo-sqlite
 
 ---
 
-## A6 — Technical: tighten the backend
+## A6 — Technical: tighten the backend ✅ Shipped
 
 **Problem.** Current backend has no auth, no rate limiting, no persistence, no monitoring. Fine for demo, not for "running at 3am."
 
@@ -164,26 +167,6 @@ Implementation: `@react-native-community/netinfo` for connectivity, `expo-sqlite
 
 These are the ones that change what the product *is*, not just how it works.
 
-## B1 — zkLogin wallet with recovery
-
-**Problem.** A local Ed25519 keypair on a single device is a UX deal-breaker for non-crypto users. Lose the phone, lose every proof you created (you can still verify, but you can't manage or transfer proofs). For any "serious" use case this fails.
-
-**Proposed solution.** Integrate **zkLogin** so users sign in with Apple, Google, or email OTP. Each login derives a Sui address deterministically from the OIDC identity. Existing proofs stay on the ephemeral address; offer a one-time "migrate my proofs" transfer flow for users who had a local keypair.
-
-Implementation references: `@mysten/zklogin`, Sui's OAuth proving service, the `sui::zklogin` framework docs.
-
-**Why it matters.** Removes the single biggest objection to the product. Converts "local key toy" into "a login you already use." Enables account portability.
-
-**Success metric.** 70%+ of new users choose a social login over "generate local key" when both are offered in onboarding (A3).
-
-**Effort.** Medium (3–4 weeks).
-
-**Risks.**
-- zkLogin proof generation on slow devices can take 5–10s. Show a dedicated loading state.
-- OIDC providers can deprecate flows. Keep local keys as a supported escape hatch.
-
----
-
 ## B2 — Camera-native provenance + hardware attestation (Recommended differentiator)
 
 **Problem.** Even with camera-only mode (A2), there's no cryptographic binding between "the phone's real camera sensor" and "the bytes we hashed." A sophisticated adversary can hook the picker API.
@@ -204,63 +187,6 @@ Implementation references: `@mysten/zklogin`, Sui's OAuth proving service, the `
 **Risks.**
 - Rooted/jailbroken devices fail attestation; we must still accept the proof but flag it clearly.
 - App Attest limits: Apple quotas assertions at 100/day per app per device initially. Mitigate with server-side attestation caching.
-
----
-
-## B3 — Cases: group related proofs into a first-class object
-
-**Problem.** A single proof is usually meaningless in isolation. An insurance claim is a story — delivery photo + unpacking photo + damage photo, timestamped minutes apart. A human-rights investigation is dozens of photos over days. Today there's just a free-form `case_id` string.
-
-**Proposed solution.** New Move struct:
-
-```move
-public struct Case has key, store {
-    id: UID,
-    creator: address,
-    title: String,
-    description: String,
-    created_at: u64,
-    proof_ids: vector<ID>,
-}
-
-public fun create_case(title, description, ctx) -> Case
-public fun add_proof(case: &mut Case, proof_id: ID, ctx)
-```
-
-In the app, add a **Cases** tab, a case-picker on the Capture screen, and a case view that chronologically lists the member proofs with a shared timeline.
-
-**Why it matters.** Unlocks every narrative use case (insurance, journalism, field reports, creative projects). Makes the product feel like a tool, not a one-shot utility.
-
-**Success metric.** % of proofs created inside a case: target 40%+ six months after shipping. Avg proofs per case ≥ 3.
-
-**Effort.** Medium (3 weeks).
-
-**Risks.** Mutation of the `vector<ID>` increases gas cost. Cap cases at a reasonable size (say 500 proofs) or shard.
-
----
-
-## B4 — Mainnet launch with pay-per-proof
-
-**Problem.** Testnet is free but the proofs are not credibly durable. Mainnet carries real weight but users need to fund a wallet with real SUI.
-
-**Proposed solution.**
-
-1. Dual-deploy the contract to mainnet. Add a `SUI_NETWORK` toggle in settings; default to mainnet after B1.
-2. **Sponsored transactions.** Backend signs and pays gas on behalf of the user, charging them via Stripe (or allowing a free quota on zkLogin sign-in). `@mysten/sui` supports sponsored tx natively.
-3. Introduce tier pricing:
-   - **Free:** 10 proofs/month per authenticated user.
-   - **Pro (\$5/mo):** unlimited proofs, priority Walrus epochs (≥25 epochs), case support.
-   - **Team (\$25/user/mo):** shared cases, workflow integrations, CSV export.
-
-**Why it matters.** Converts the project from an open-source demo to a business. Gives us the revenue to keep Walrus blobs paid-for and the backend humming.
-
-**Success metric.** First paying user within 30 days of launch. 50 paying users within 90 days.
-
-**Effort.** Medium (4 weeks including Stripe + sponsored tx infra).
-
-**Risks.**
-- Key management for the sponsor wallet is the security bottleneck. Use a dedicated hot wallet funded daily from cold storage, with monitoring on outflow.
-- Payment compliance: Stripe for cards avoids most of the mess; don't take crypto in exchange for proofs unless you want to wear the exchange hat.
 
 ---
 
@@ -345,69 +271,6 @@ Bigger, riskier bets. Each should be validated by users / data from Tracks A and
 
 ---
 
-## C2 — Revocation & dispute channels
-
-**Problem.** The chain is immutable. But disputed proofs (incorrect attribution, unauthorized upload of private imagery, legal takedowns) need *some* signal of "this is contested," without rewriting history.
-
-**Proposed solution.** A **DisputeObject** on chain that references a `PhotoProof` by ID and is owned by a trusted multisig ("SnapProof Ethics Committee" or a DAO). The verifier surfaces "⚠ disputed — see reason" next to any proof referenced by a DisputeObject, with a link to the filed reason. The proof itself is never deleted.
-
-**Effort.** Medium. Governance is the hard part.
-
-**Risk.** This is a political object. We must publish clear policy *before* taking first dispute. Otherwise it becomes a tool for abuse.
-
----
-
-## C3 — SDK and embed partners
-
-**Problem.** News CMSs, Shopify, insurance portals, lab notebooks — none of them are ever installing our app. They'd happily embed a snippet if we handed them one.
-
-**Proposed solution.** Two deliverables:
-
-1. **`@snapproof/verify` JS library.** Takes an image file or URL, returns `{ verified, proof, creator, createdAt }`. Pure client-side, no backend dependency.
-2. **`<snapproof-badge>` web component.** Drop-in for any CMS — renders the "Verified on SnapProof" seal with on-hover details and a click-through to the proof page (A1). 50 kB total.
-
-**Effort.** Small-medium (3 weeks) once A1 and A6 exist.
-
-**Metric.** Track `snapproof-badge` loads from non-owned domains.
-
----
-
-## C4 — Creator identity layer (opt-in)
-
-**Problem.** Anonymous proofs are fine for many use cases but useless for journalist bylines or influencer endorsements. Today the only identity is a 32-byte address.
-
-**Proposed solution.** Let creators optionally link a verified identity (domain-based via well-known file, Keybase-style PGP, X account via OAuth + signed tweet). Store the association off-chain in our indexer (not on chain — identity claims can change). The verifier renders "Proof by @jane.com (verified via DNS TXT)" instead of `0xabc1...def`.
-
-**Effort.** Medium. Small attack surface if we stick to DNS + OAuth.
-
-**Risk.** Identity is UX quicksand. Ship the humblest version first — one domain claim, one verification method.
-
----
-
-## C5 — The "verified media" open protocol play
-
-**Problem.** Competing products (C2PA / Content Credentials, Numbers Protocol, Project Origin) each solve slices of the authenticity problem. A walled-garden SnapProof that doesn't talk to them won't win.
-
-**Proposed solution.** Make SnapProof a **proof anchoring** layer that can ingest and emit C2PA manifests. On capture, if a C2PA manifest is present (from a supported camera / editing tool), include its hash in the proof. On verify, if the image has a C2PA manifest and an on-chain SnapProof, render both signals together.
-
-**Effort.** Large. Also requires political work (joining C2PA as a participant).
-
-**Metric.** Number of external tools that emit C2PA manifests readable by our verifier.
-
----
-
-## C6 — Verifier protocol + incentives for independent indexers
-
-**Problem.** Our backend indexer is a single point of convenience. If it goes down, the mobile and web verifiers fall back to direct Sui RPC — which works, but is slow and hard to paginate.
-
-**Proposed solution.** Publish a minimal **indexer spec** (event format, endpoints we expect), open-source a reference implementation, and offer bounties / Walrus storage credits for third parties running compliant indexers. The mobile and web clients accept a list of indexer URLs and fan out.
-
-**Effort.** Medium (spec + reference). Ongoing to maintain.
-
-**Risk.** If nobody runs a third-party indexer, we just maintain our own. Not a downside, just a fallback.
-
----
-
 # Non-goals (explicit cuts)
 
 Things *not* to build, at least through year 1:
@@ -421,15 +284,15 @@ Things *not* to build, at least through year 1:
 
 # Prioritization matrix
 
-| Rank | Item | Pay-off | Effort | Confidence |
-|------|------|---------|--------|------------|
-| 1 | A1 — Shareable link + web verifier | High | Small | High |
-| 2 | A3 — Trust-calibrating onboarding | Medium | Small | High |
-| 3 | A2 — Camera-only + live hash | Medium | Small | High |
-| 4 | A5 — Analytics & crash reporting | Medium | Small | High |
-| 5 | A6 — Backend tightening | Medium | Medium | High |
-| 6 | A4 — Offline queue | Medium | Small-Med | Medium |
-| 7 | B1 — zkLogin | High | Medium | High |
+| Rank | Item | Pay-off | Effort | Confidence | Status |
+|------|------|---------|--------|------------|--------|
+| 1 | A1 — Shareable link + web verifier | High | Small | High | ✅ Shipped |
+| 2 | A3 — Trust-calibrating onboarding | Medium | Small | High | ✅ Shipped |
+| 3 | A2 — Camera-only + live hash | Medium | Small | High | ✅ Shipped |
+| 4 | A5 — Analytics & crash reporting | Medium | Small | High | ✅ Shipped |
+| 5 | A6 — Backend tightening | Medium | Medium | High | ✅ Shipped |
+| 6 | A4 — Offline queue | Medium | Small-Med | Medium | ✅ Shipped |
+| 7 | B1 — zkLogin | High | Medium | High | ⏳ Next |
 | 8 | B2 — Device attestation | High | Medium | Medium |
 | 9 | B3 — Cases | High | Medium | High |
 | 10 | B4 — Mainnet + paid tiers | Blocker-for-revenue | Medium | Medium |
@@ -445,9 +308,9 @@ Things *not* to build, at least through year 1:
 
 # Suggested sequencing
 
-**Weeks 1–2.** A5, A3, A2.
-**Weeks 2–4.** A1, A6.
-**Weeks 4–6.** A4. Start B1.
+**Weeks 1–2.** A5, A3, A2. ✅ Shipped 2026-04-19.
+**Weeks 2–4.** A1, A6. ✅ Shipped 2026-04-19.
+**Weeks 4–6.** A4. ✅ Shipped 2026-04-19. Start B1.
 **Weeks 6–10.** B1 ships. B3 starts. A-track polish.
 **Weeks 10–14.** B2 ships. B3 ships. B5 in design.
 **Weeks 14–20.** B4 ships (mainnet + pricing). B6 pilot sales begin.
@@ -476,6 +339,16 @@ Not a full analysis — just the ones that matter for positioning.
 
 # Ask: what to build first
 
-If one thing ships next: **A1 (shareable link + web verifier)**. It's small, compounds every other feature's value, and turns every existing proof into its own marketing surface.
+~~If one thing ships next: **A1 (shareable link + web verifier)**.~~ **Shipped.**
 
-If we can run two in parallel: **A1 + A5** (analytics). That way the data on A1's adoption immediately informs whether the next bet is A3 (trust story), A4 (reliability), or jumping to B1 (recoverable wallets).
+~~If we can run two in parallel: **A1 + A5** (analytics).~~ **Shipped.**
+
+**What's next (as of 2026-04-19).** With Track A complete, the next
+decision is whether to invest in the trust story (B1 zkLogin for
+recoverable wallets, B2 device attestation) or the distribution story
+(B5 blob lifetime mgmt for paid tiers, B6 insurance pilot, B7 NGO
+pilot). The recommendation from the original plan still holds: do
+**B1 next**. It's the one Track B item that is strictly strategic —
+every segment play in B6 / B7 needs recoverable wallets before it's
+sellable.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     

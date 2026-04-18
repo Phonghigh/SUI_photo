@@ -90,6 +90,14 @@ export async function getAddress(): Promise<string> {
 }
 
 /**
+ * Get the wallet's raw secret key (for backup).
+ */
+export async function exportSecretKey(): Promise<string> {
+  const keypair = await getKeypair();
+  return keypair.getSecretKey();
+}
+
+/**
  * Request testnet SUI tokens from the faucet.
  */
 export async function requestTestnetTokens(): Promise<boolean> {

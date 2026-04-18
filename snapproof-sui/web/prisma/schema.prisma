@@ -1,0 +1,24 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Proof {
+  id             String   @id // The Move object ID
+  txDigest       String   @unique
+  creator        String
+  imageHash      String   @unique
+  metadataHash   String
+  proofHash      String
+  walrusBlobId   String
+  coarseGeoHash  String?
+  createdAt      DateTime
+  indexedAt      DateTime @default(now())
+
+  @@index([creator])
+  @@index([createdAt])
+}

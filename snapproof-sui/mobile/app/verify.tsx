@@ -11,7 +11,10 @@ import {
   ScrollView,
   Linking,
 } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { Stack } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import { OnboardingModal } from "../src/components/OnboardingModal";
 import { hashImage } from "../src/utils/hash";
 import { lookupProofByImageHash, getProofById } from "../src/services/sui";
 import { SUI_NETWORK, WALRUS_AGGREGATOR_URL } from "../src/config";
@@ -40,6 +43,11 @@ export default function VerifyScreen() {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  useFocusEffect(() => {
+    track({ name: "verify_link_opened" });
+  });
 
   const explorerBase =
     SUI_NETWORK === "mainnet"
@@ -153,7 +161,21 @@ export default function VerifyScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <>
+      <Stack.Screen 
+        options={{
+          headerRight: () => (
+            <TouchableOpacity onPress={() => setShowOnboarding(true)} style={{ paddingHorizontal: 16 }}>
+              <Text style={{ fontSize: 20 }}>ℹ️</Text>
+            </TouchableOpacity>
+          )
+        }} 
+      />
+      <OnboardingModal 
+        visible={showOnboarding} 
+        onComplete={() => setShowOnboarding(false)} 
+      />
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Mode selector */}
       <View style={styles.modeSelector}>
         <TouchableOpacity
@@ -305,7 +327,8 @@ export default function VerifyScreen() {
           </Text>
         </TouchableOpacity>
       )}
-    </ScrollView>
+      </ScrollView>
+    </>
   );
 }
 

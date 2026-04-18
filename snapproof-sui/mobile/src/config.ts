@@ -6,7 +6,7 @@ export const SUI_NETWORK: "testnet" | "devnet" | "mainnet" =
 // Package ID of the deployed SnapProof Move contract.
 export const PROOF_PACKAGE_ID =
   process.env.EXPO_PUBLIC_PROOF_PACKAGE_ID ??
-  "0x8cb3e3d082971bde081c3af6b794fa3748cc454985cdc98140c20892a5cd3321";
+  "";
 
 // Walrus publisher endpoint (for uploading blobs)
 export const WALRUS_PUBLISHER_URL =
@@ -25,3 +25,7 @@ export const BACKEND_URL =
 // Google Maps API key
 export const GOOGLE_MAPS_API_KEY =
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+
+// Public URL of the web verifier (Next.js). Used for "Copy Link" on receipts.
+export const WEB_VERIFIER_URL =
+  process.env.EXPO_PUBLIC_WEB_VERIFIER_URL ?? "http://localhost:3000";

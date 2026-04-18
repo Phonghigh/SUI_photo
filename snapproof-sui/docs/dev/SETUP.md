@@ -98,6 +98,31 @@ First launch: the app generates a fresh keypair and you'll see the address in th
 - Android emulator needs Android Studio + an AVD (API 33+ recommended).
 - Camera only works on real devices or simulators with a camera source; Expo Go on the simulator can still pick from the photo library.
 
+## Web verifier
+
+The `web/` workspace is a Next.js app that renders public proof pages and
+accepts image hashes or object IDs at `/`. It pulls data from the same Sui
+RPC the mobile app uses and falls back to the Express backend for indexer
+lookups.
+
+```bash
+cd web
+cp .env.example .env.local
+npm install
+npm run dev
+# → http://localhost:3000
+```
+
+Key routes:
+
+- `/` — search form (object ID or 64-hex image hash)
+- `/p/[objectId]` — canonical proof page (server-fetches, client re-hashes)
+- `/h/[hash]` — hash lookup that redirects to `/p/[id]` on hit
+- `/p/[id]/opengraph-image` — edge-rendered OG preview
+
+If you're running the backend locally on port 3001, leave
+`NEXT_PUBLIC_BACKEND_URL` at its default.
+
 ## Contracts
 
 Only needed if you're redeploying.
@@ -156,8 +181,28 @@ npm run build
 npm start              # node dist/index.js
 npm run lint
 
+# web
+npm run dev
+npm run build
+npm start
+npm run lint
+
 # contracts
 sui move build
 sui move test
 ./deploy.sh
 ```
+
+## Observability (optional)
+
+Both the backend and the mobile app are instrumented to no-op unless you
+opt in.
+
+- **Sentry** — set `SENTRY_DSN` in `backend/.env` and `EXPO_PUBLIC_SENTRY_DSN`
+  in `mobile/.env`. The optional dependencies (`@sentry/node`,
+  `@sentry/react-native`) are imported dynamically, so missing them just
+  leaves the no-op path active.
+- **Prometheus** — the backend exposes `GET /api/metrics`. Point Prometheus
+  or Grafana Agent at it. See [`BACKEND.md`](./BACKEND.md).
+- **Postgres indexer** — set `DATABASE_URL` in `backend/.env` and install
+  `pg`. Tables are created on startup.

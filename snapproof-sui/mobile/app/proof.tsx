@@ -10,7 +10,8 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { SUI_NETWORK, WALRUS_AGGREGATOR_URL } from "../src/config";
+import { SUI_NETWORK, WALRUS_AGGREGATOR_URL, WEB_VERIFIER_URL } from "../src/config";
+import { track } from "../src/services/analytics";
 
 export default function ProofScreen() {
   const router = useRouter();
@@ -62,6 +63,7 @@ export default function ProofScreen() {
           "Verify at: https://snapproof.app/verify",
         ].join("\n"),
       });
+      track({ name: "share_tapped" });
     } catch (error) {
       console.warn("Share failed:", error);
     }
@@ -72,8 +74,9 @@ export default function ProofScreen() {
       Alert.alert("Error", "No Object ID available for this proof yet.");
       return;
     }
-    const webUrl = `http://localhost:3000/p/${params.objectId}`;
+    const webUrl = `${WEB_VERIFIER_URL}/p/${params.objectId}`;
     await Clipboard.setStringAsync(webUrl);
+    track({ name: "copy_link_tapped", props: { target: "proof_object" } });
     Alert.alert("Link Copied", "The web verification link has been copied to your clipboard.");
   };
 

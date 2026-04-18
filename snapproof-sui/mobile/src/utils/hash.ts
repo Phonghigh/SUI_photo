@@ -1,5 +1,7 @@
 import { Platform } from "react-native";
 import * as Crypto from "expo-crypto";
+import { sha256 } from "@noble/hashes/sha2";
+import { bytesToHex } from "@noble/hashes/utils";
 
 /**
  * Read a local image file and compute its SHA-256 hash.
@@ -22,15 +24,9 @@ async function hashImageNative(uri: string): Promise<string> {
   // Convert base64 to Uint8Array to hash raw bytes
   const bytes = base64ToUint8Array(base64);
   
-  // Use digestAsync to hash the byte array
-  const hashBuffer = await Crypto.digestAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    bytes
-  );
-  
-  // Convert ArrayBuffer to hex string
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  // Hash the raw byte array using @noble/hashes
+  const hashBytes = sha256(bytes);
+  return bytesToHex(hashBytes);
 }
 
 /**

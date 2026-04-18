@@ -19,10 +19,15 @@
  *   wallet_funded                   — balance observed > 0 for first time
  *   faucet_requested                — user tapped Faucet
  *   share_tapped                    — user tapped share link on receipt
+ *   copy_link_tapped                — user tapped "Copy Link" on receipt
  *   permission_granted              — props.permission, props.result
+ *   image_hashed                    — image hash computed (props.source)
+ *   settings_opened / settings_changed  — user visited settings
+ *   outbox_enqueued / outbox_processed  — offline queue lifecycle
  */
 
 import { Platform } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import { logger } from "../utils/logger";
 
 type Primitive = string | number | boolean | null | undefined;
@@ -33,103 +38,66 @@ export interface AnalyticsEvent {
   props?: AnalyticsProps;
 }
 
-const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN ?? "";
 const APP_VERSION = process.env.EXPO_PUBLIC_APP_VERSION ?? "0.1.0";
+const TELEMETRY_KEY = "snapproof_telemetry_optin";
 
-type SentryLike = {
-  init: (opts: Record<string, unknown>) => void;
-  captureException: (err: unknown, context?: Record<string, unknown>) => void;
-  captureMessage: (msg: string, level?: string) => void;
-  addBreadcrumb: (b: Record<string, unknown>) => void;
-  setUser: (u: Record<string, unknown> | null) => void;
-};
-
-let sentry: SentryLike | null = null;
 let initialized = false;
+let isTelemetryEnabled = true;
 
 /**
  * Initialize analytics. Safe to call multiple times (idempotent).
- * Call once from app/_layout.tsx on first mount.
  */
 export async function initAnalytics(): Promise<void> {
+  try {
+    const stored = await SecureStore.getItemAsync(TELEMETRY_KEY);
+    isTelemetryEnabled = stored !== "false";
+  } catch {
+    isTelemetryEnabled = true; // default on
+  }
+
   if (initialized) return;
   initialized = true;
 
-  if (!SENTRY_DSN) {
-    logger.info("ANALYTICS", "SENTRY_DSN not set — Sentry disabled (no-op mode)");
-    return;
-  }
-
-  try {
-    // Dynamic import: Sentry is an optional dependency.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = await import("@sentry/react-native" as string).catch(() => null);
-    if (!mod) {
-      logger.warn("ANALYTICS", "@sentry/react-native not installed — falling back to console");
-      return;
-    }
-    sentry = mod as unknown as SentryLike;
-    sentry.init({
-      dsn: SENTRY_DSN,
-      enableAutoSessionTracking: true,
-      tracesSampleRate: 0.1,
-      environment: __DEV__ ? "development" : "production",
-      release: `snapproof-mobile@${APP_VERSION}`,
-    });
-    logger.info("ANALYTICS", "Sentry initialized");
-  } catch (err) {
-    logger.warn("ANALYTICS", "Sentry init failed", { err: String(err) });
-    sentry = null;
-  }
+  logger.info("ANALYTICS", "Analytics initialized", { telemetry: isTelemetryEnabled });
 }
 
 /**
  * Emit a structured analytics event.
- * Non-blocking, always safe (never throws).
  */
 export function track(event: AnalyticsEvent): void {
+  if (!isTelemetryEnabled) return;
   try {
     emitEvent(event);
-    if (sentry) {
-      sentry.addBreadcrumb({
-        category: "analytics",
-        type: "info",
-        message: event.name,
-        data: event.props ?? {},
-        level: "info",
-      });
-    }
   } catch {
     // never let analytics crash the app
   }
 }
 
 /**
- * Capture an exception (sent to Sentry if configured, otherwise logged).
+ * Capture an exception (logged locally).
  */
-export function captureException(err: unknown, context?: Record<string, Primitive>): void {
+export function captureException(
+  err: unknown,
+  context?: Record<string, Primitive>
+): void {
+  if (!isTelemetryEnabled) return;
   try {
     logger.error("ANALYTICS", "captured exception", {
       err: err instanceof Error ? err.message : String(err),
       context,
     });
-    if (sentry) {
-      sentry.captureException(err, { extra: context ?? {} });
-    }
   } catch {
     // swallow
   }
 }
 
 /**
- * Set the current user identifier (wallet address).
- * Never sends PII — just the public Sui address.
+ * Set the current user identifier (log only).
  */
 export function setUser(walletAddress: string | null): void {
+  if (!isTelemetryEnabled) return;
   try {
-    if (sentry) {
-      sentry.setUser(walletAddress ? { id: walletAddress } : null);
-    }
+    logger.debug("ANALYTICS", "setUser", { walletAddress });
   } catch {
     // swallow
   }

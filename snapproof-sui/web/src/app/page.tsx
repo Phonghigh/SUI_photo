@@ -1,65 +1,79 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ShieldCheck, Search } from 'lucide-react';
 
 export default function Home() {
+  const [input, setInput] = useState('');
+  const [error, setError] = useState('');
+  const router = useRouter();
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = input.trim();
+    if (!raw) return;
+    setError('');
+
+    // If the user pasted a full URL, pull out the final segment.
+    let target = raw;
+    if (target.includes('/p/')) target = target.split('/p/')[1].split(/[?#]/)[0];
+    else if (target.includes('/h/')) target = target.split('/h/')[1].split(/[?#]/)[0];
+
+    // Route by shape:
+    //   0x-prefixed long ID → object page
+    //   64-char lowercase hex → hash page
+    if (/^0x[0-9a-fA-F]{60,66}$/.test(target)) {
+      router.push(`/p/${target}`);
+    } else if (/^[0-9a-fA-F]{64}$/.test(target)) {
+      router.push(`/h/${target.toLowerCase()}`);
+    } else {
+      setError(
+        'Paste either a Sui object ID (starts with 0x) or a 64-character image hash.'
+      );
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="min-h-screen bg-[#1a1a2e] text-white selection:bg-[#e94560] selection:text-white flex flex-col items-center justify-center p-4">
+      <div className="w-20 h-20 bg-[#16213e] rounded-full flex items-center justify-center mb-8 shadow-lg border border-[#0f3460]">
+        <ShieldCheck className="w-10 h-10 text-[#4ecca3]" />
+      </div>
+
+      <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-center">
+        SnapProof Verifier
+      </h1>
+
+      <p className="text-[#888] text-lg mb-12 max-w-md text-center">
+        Verify the cryptographic integrity of any photo anchored on the Sui blockchain.
+      </p>
+
+      <form onSubmit={handleSearch} className="w-full max-w-lg relative">
+        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+          <Search className="h-5 w-5 text-[#888]" />
+        </div>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Paste Proof Object ID, image hash, or URL..."
+          className="w-full bg-[#16213e] border border-[#0f3460] rounded-xl py-4 pl-12 pr-28 text-white placeholder-[#555] focus:outline-none focus:ring-2 focus:ring-[#e94560] focus:border-transparent transition-all shadow-inner"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        <button
+          type="submit"
+          className="absolute inset-y-2 right-2 bg-[#e94560] hover:bg-[#d63d56] text-white px-6 rounded-lg font-medium transition-colors"
+        >
+          Verify
+        </button>
+      </form>
+
+      {error && (
+        <p className="mt-4 text-sm text-[#ff6b6b] max-w-md text-center">{error}</p>
+      )}
+
+      <p className="mt-8 text-xs text-[#555] max-w-md text-center">
+        Tip: the mobile app&apos;s receipt screen has a &ldquo;Copy Link&rdquo; button that produces a verified URL.
+      </p>
     </div>
   );
 }

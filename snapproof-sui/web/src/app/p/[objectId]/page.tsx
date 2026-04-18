@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title: 'Verified Photo Proof | SnapProof',
       description: `Cryptographic proof that this photo existed on ${new Date(proof.createdAt).toLocaleDateString()}`,
-      images: [`${WALRUS_AGGREGATOR_URL}/v1/${proof.walrusBlobId}`],
+      images: [`${WALRUS_AGGREGATOR_URL}/v1/blobs/${proof.walrusBlobId}`],
     },
     twitter: {
       card: 'summary_large_image',
@@ -46,7 +46,7 @@ export default async function ProofPage({ params }: Props) {
     );
   }
 
-  const imageUrl = `${WALRUS_AGGREGATOR_URL}/v1/${proof.walrusBlobId}`;
+  const imageUrl = `${WALRUS_AGGREGATOR_URL}/v1/blobs/${proof.walrusBlobId}`;
   const dateStr = new Date(proof.createdAt).toLocaleString();
   const shortCreator = `${proof.creator.slice(0, 8)}...${proof.creator.slice(-6)}`;
 

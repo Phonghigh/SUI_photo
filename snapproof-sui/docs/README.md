@@ -17,8 +17,9 @@ Start here if you're contributing code, reviewing the design, or integrating aga
 - [`dev/WORKFLOWS.md`](./dev/WORKFLOWS.md) — every user and developer workflow step by step, with file/function references.
 - [`dev/MOBILE.md`](./dev/MOBILE.md) — stack, directory layout, screen-by-screen tour, services, and platform branches.
 - [`dev/CONTRACTS.md`](./dev/CONTRACTS.md) — Move package, `PhotoProof` struct, `create_proof` entry function, event, tests.
-- [`dev/BACKEND.md`](./dev/BACKEND.md) — Express service, Sui client layer, cache, what's intentionally missing.
-- [`dev/API.md`](./dev/API.md) — REST endpoints, request/response shapes, and `curl` examples.
+- [`dev/BACKEND.md`](./dev/BACKEND.md) — Express service, Sui client layer, Postgres indexer, metrics, rate limiting.
+- [`dev/WEB.md`](./dev/WEB.md) — Next.js web verifier, routes, client-side re-hashing, OG images.
+- [`dev/API.md`](./dev/API.md) — REST endpoints, RFC 7807 error format, request/response shapes, and `curl` examples.
 - [`dev/DATA_MODEL.md`](./dev/DATA_MODEL.md) — canonical field reference for on-chain, off-chain, and storage.
 - [`dev/SETUP.md`](./dev/SETUP.md) — clone-to-running instructions for all three workspaces, plus troubleshooting.
 - [`dev/GLOSSARY.md`](./dev/GLOSSARY.md) — one-line definitions for every domain term.
@@ -29,13 +30,14 @@ Start here if you're contributing code, reviewing the design, or integrating aga
 ```
 snapproof-sui/
 ├── mobile/       # Expo + React Native app
+├── web/          # Next.js web verifier (public proof pages)
 ├── contracts/    # Sui Move package (snapproof::snapproof)
 ├── backend/      # Node/Express indexer + REST API
 └── docs/
     ├── README.md         (this file)
     ├── overview/         OVERVIEW.md, DEMO.md
     └── dev/              ARCHITECTURE.md, WORKFLOWS.md, MOBILE.md,
-                          CONTRACTS.md, BACKEND.md, API.md,
+                          CONTRACTS.md, BACKEND.md, WEB.md, API.md,
                           DATA_MODEL.md, SETUP.md, GLOSSARY.md,
                           ROADMAP.md
 ```
@@ -46,7 +48,7 @@ snapproof-sui/
 
 **I'm giving a demo:** `overview/OVERVIEW.md` → `overview/DEMO.md`.
 
-**I'm onboarding as a developer:** `overview/OVERVIEW.md` → `dev/ARCHITECTURE.md` → `dev/SETUP.md` → `dev/WORKFLOWS.md` → the workspace doc you'll be touching first (`MOBILE.md`, `CONTRACTS.md`, or `BACKEND.md`).
+**I'm onboarding as a developer:** `overview/OVERVIEW.md` → `dev/ARCHITECTURE.md` → `dev/SETUP.md` → `dev/WORKFLOWS.md` → the workspace doc you'll be touching first (`MOBILE.md`, `WEB.md`, `CONTRACTS.md`, or `BACKEND.md`).
 
 **I need to integrate via HTTP:** `dev/DATA_MODEL.md` → `dev/API.md`.
 
