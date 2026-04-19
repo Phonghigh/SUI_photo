@@ -4,8 +4,12 @@
   "private": true,
   "description": "SnapProof - Photo evidence timestamping on Sui",
   "scripts": {
+    "web:install": "cd web && npm install",
+    "web:build": "cd web && npm run build",
+    "build": "npm run web:build",
     "mobile": "cd mobile && npx expo start",
     "backend": "cd backend && npm run dev",
     "build:backend": "cd backend && npm run build"
   }
 }
+
