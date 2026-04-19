@@ -237,7 +237,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </FadeUp>
 
-        <Text style={styles.builtOn}>Built on Sui</Text>
       </ScrollView>
     </GlowBackground>
   );

@@ -371,7 +371,6 @@ export default function CaptureScreen() {
 
 
 
-        <Text style={styles.builtOn}>Built on Sui</Text>
       </ScrollView>
     </GlowBackground>
   );
