@@ -17,7 +17,7 @@ import { GlowBackground, GlassCard, CyanButton, CoralButton, PageHeader } from "
 import { C, TYPE } from "../src/theme/tokens";
 import { FadeUp } from "../src/components/FadeUp";
 import { getProofById } from "../src/services/sui";
-import { SUI_NETWORK, WALRUS_AGGREGATOR_URL } from "../src/config";
+import { SUI_NETWORK, WALRUS_AGGREGATOR_URLS } from "../src/config";
 import type { ProofData } from "../src/types/proof";
 
 export default function ProofDetailScreen() {
@@ -26,6 +26,8 @@ export default function ProofDetailScreen() {
   const headerHeight = useHeaderHeight();
   const [proof, setProof] = useState<ProofData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [aggregatorIndex, setAggregatorIndex] = useState(0);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     if (id) fetchDetail();
@@ -66,8 +68,18 @@ export default function ProofDetailScreen() {
   }
 
   const imageUrl = proof?.walrusBlobId 
-    ? `${WALRUS_AGGREGATOR_URL}/v1/${proof.walrusBlobId}`
+    ? `${WALRUS_AGGREGATOR_URLS[aggregatorIndex]}/v1/blobs/${proof.walrusBlobId}`
     : null;
+
+  const handleImageError = () => {
+    if (aggregatorIndex < WALRUS_AGGREGATOR_URLS.length - 1) {
+      console.log(`[Walrus] Aggregator ${aggregatorIndex} failed, trying next...`);
+      setAggregatorIndex(prev => prev + 1);
+    } else {
+      console.error("[Walrus] All aggregators failed to load blob:", proof?.walrusBlobId);
+      setImageError(true);
+    }
+  };
 
   return (
     <GlowBackground topColor="rgba(240,86,110,0.22)" bottomColor="rgba(60,200,240,0.28)">
@@ -100,10 +112,11 @@ export default function ProofDetailScreen() {
         <FadeUp delay={60}>
           <GlassCard tone="cyan" radius={24} noPad>
             <View style={styles.imageContainer}>
-              {imageUrl ? (
+              {imageUrl && !imageError ? (
                 <Image
                   source={{ uri: imageUrl }}
                   style={styles.image}
+                  onError={handleImageError}
                   accessible={true}
                   accessibilityRole="image"
                   accessibilityLabel={

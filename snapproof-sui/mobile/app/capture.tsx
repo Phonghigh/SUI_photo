@@ -30,6 +30,7 @@ import { hashImage } from "../src/utils/hash";
 import { encodeGeohash } from "../src/utils/geohash";
 import { track } from "../src/services/analytics";
 import { SUI_NETWORK } from "../src/config";
+import { uploadToWalrus } from "../src/services/walrus";
 
 const SEAL_STEPS = [
   { label: "Hashing image", detail: "SHA-256" },
@@ -135,11 +136,14 @@ export default function CaptureScreen() {
       const loc = await Location.getCurrentPositionAsync({});
       const geohash = encodeGeohash(loc.coords.latitude, loc.coords.longitude);
 
+      // Real Walrus upload
+      const { blobId } = await uploadToWalrus(uri);
+
       const tx = await mintProof({
         imageHash: hash,
-        metadataHash: hash, // For now, use same as image
-        proofHash: hash,    // For now, use same as image
-        walrusBlobId: "0",  // Walrus integration pending
+        metadataHash: hash,
+        proofHash: hash,
+        walrusBlobId: blobId,
         createdAt: Date.now(),
         coarseGeoHash: geohash,
       });
@@ -299,7 +303,7 @@ export default function CaptureScreen() {
                     )}
                     <View style={styles.imgOverlay}>
                       <View style={styles.verifiedStamp}>
-                        <Ionicons name="checkmark-seal" size={14} color="#fff" />
+                        <Ionicons name="checkmark-circle" size={14} color="#fff" />
                         <Text style={styles.stampText}>VERIFIED</Text>
                       </View>
                     </View>
