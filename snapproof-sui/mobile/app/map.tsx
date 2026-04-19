@@ -59,7 +59,7 @@ export default function MapScreen() {
 
           const proof: Proof = {
             id: p.proofHash.slice(0, 10),
-            objectId: p.objectId,
+            objectId: p.id,
             latitude,
             longitude,
             location: p.coarseGeoHash || "Unknown",
@@ -495,7 +495,21 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     backgroundColor: "rgba(60,200,240,0.08)",
     borderWidth: 1,
-    borderColor: C.cyanBorder,
+    borderColor: "rgba(60,200,240,0.22)",
     alignItems: "center",
+  },
+  explorerBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#3cc8f0",
+  },
+  builtOn: {
+    marginTop: 40,
+    textAlign: "center",
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 3,
+    color: "rgba(132,142,160,0.4)",
   },
 });

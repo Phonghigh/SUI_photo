@@ -106,6 +106,7 @@ export async function getProofById(objectId: string): Promise<ProofData | null> 
 
     const fields = obj.data.content.fields as Record<string, unknown>;
     return {
+      id: objectId,
       imageHash: String(fields.image_hash ?? ""),
       metadataHash: String(fields.metadata_hash ?? ""),
       proofHash: String(fields.proof_hash ?? ""),

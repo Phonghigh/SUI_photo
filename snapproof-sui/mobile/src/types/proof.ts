@@ -1,4 +1,5 @@
 export interface ProofData {
+  id: string;
   imageHash: string;
   metadataHash: string;
   proofHash: string;
