@@ -14,8 +14,9 @@ async function main() {
   // Subscribe to the ProofCreated event
   const unsubscribe = await client.subscribeEvent({
     filter: {
-      MovePackage: PROOF_PACKAGE_ID,
+      MoveEventType: `${PROOF_PACKAGE_ID}::proof::ProofCreated`,
     },
+
 
     onMessage: async (event) => {
       console.log(`[Indexer] Received event: ${event.type}`);
