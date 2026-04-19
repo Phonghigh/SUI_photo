@@ -171,35 +171,24 @@ export default function CaptureScreen() {
 
         showsVerticalScrollIndicator={false}
       >
-        <PageHeader title="Capture" />
+        <PageHeader 
+          title="Capture" 
+          rightElement={
+            <TouchableOpacity onPress={refreshBalance} activeOpacity={0.7}>
+              <GlassCard radius={12} tone="cyan" style={{ paddingHorizontal: 10, paddingVertical: 4 }}>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ fontSize: 8, fontWeight: "700", color: C.slate }}>SUI</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: C.textPrimary }}>{balance || "0.000"}</Text>
+                </View>
+              </GlassCard>
+            </TouchableOpacity>
+          }
+        />
 
         
         {phase === "viewfinder" && (
           <>
-            <FadeUp delay={0}>
-              <View style={styles.header}>
-                <View>
-                  <View style={styles.heroRow}>
-                    <Feather name="camera" size={14} color={C.coral} style={{ marginRight: 6 }} />
-                    <Text style={styles.eyebrow}>Capture</Text>
-                  </View>
-                  <Text style={styles.heroTitle}>New Proof</Text>
-                </View>
-                
-                <GlassCard radius={16} tone="cyan" style={styles.balanceCard}>
-                  <View style={styles.balanceInner}>
-                    <TouchableOpacity onPress={refreshBalance} style={styles.balanceInfo} activeOpacity={0.7}>
-                      <Text style={styles.balanceLabel}>SUI BALANCE</Text>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        <Text style={styles.balanceValue}>{balance || "0.000"}</Text>
-                        <Feather name="refresh-cw" size={8} color={C.slate} />
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                </GlassCard>
-
-              </View>
-            </FadeUp>
+            {/* Hero section removed - title is in PageHeader */}
 
             <FadeUp delay={60}>
               <GlassCard tone="cyan" radius={24} noPad>

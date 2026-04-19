@@ -20,7 +20,7 @@ import {
   processQueue,
   OutboxItem,
 } from "../src/services/outbox";
-import { GlowBackground, GlassCard, CoralButton, CyanButton } from "../src/components/Glass";
+import { GlowBackground, GlassCard, CoralButton, CyanButton, PageHeader } from "../src/components/Glass";
 import { C, TYPE } from "../src/theme/tokens";
 import { FadeUp } from "../src/components/FadeUp";
 
@@ -126,29 +126,14 @@ export default function OutboxScreen() {
 
   return (
     <GlowBackground topColor="rgba(240,86,110,0.15)" bottomColor="rgba(60,200,240,0.2)">
-      <Stack.Screen
-        options={{
-          headerTransparent: true,
-          headerTitle: "",
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backBtn}
-              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-            >
-              <Feather name="arrow-left" size={20} color={C.silver} />
-            </TouchableOpacity>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.container, { paddingTop: headerHeight + 16 }]}>
+      <PageHeader title="Offline Outbox" />
+
+      <View style={[styles.container, { paddingTop: 16 }]}>
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>Submission Queue</Text>
-            <Text style={styles.headerTitle}>Offline Outbox</Text>
           </View>
           
           {queue.length > 0 && (

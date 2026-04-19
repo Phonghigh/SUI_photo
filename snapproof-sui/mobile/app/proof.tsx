@@ -13,7 +13,7 @@ import {
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { GlowBackground, GlassCard, CyanButton, CoralButton } from "../src/components/Glass";
+import { GlowBackground, GlassCard, CyanButton, CoralButton, PageHeader } from "../src/components/Glass";
 import { C, TYPE } from "../src/theme/tokens";
 import { FadeUp } from "../src/components/FadeUp";
 import { getProofById } from "../src/services/sui";
@@ -65,48 +65,35 @@ export default function ProofDetailScreen() {
     );
   }
 
-  const imageUrl = proof?.blobId 
-    ? `${WALRUS_AGGREGATOR_URL}/v1/${proof.blobId}`
+  const imageUrl = proof?.walrusBlobId 
+    ? `${WALRUS_AGGREGATOR_URL}/v1/${proof.walrusBlobId}`
     : null;
 
   return (
     <GlowBackground topColor="rgba(240,86,110,0.22)" bottomColor="rgba(60,200,240,0.28)">
-      <Stack.Screen
-        options={{
-          headerTransparent: true,
-          headerTitle: "",
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backBtn}
-              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-            >
-              <Feather name="arrow-left" size={20} color={C.silver} />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
-              <Feather name="share-2" size={18} color={C.silver} />
-            </TouchableOpacity>
-          ),
-        }}
+      <Stack.Screen options={{ headerShown: false }} />
+
+      <PageHeader 
+        title="Proof Details" 
+        rightElement={
+          <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
+            <Feather name="share-2" size={18} color={C.silver} />
+          </TouchableOpacity>
+        }
       />
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: headerHeight + 16 }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: 16 }]}
         showsVerticalScrollIndicator={false}
       >
         
         <FadeUp delay={0}>
-          <View style={styles.hero}>
+          <View style={styles.heroRowContainer}>
             <View style={styles.sealedBadge}>
               <Ionicons name="shield-checkmark" size={12} color={C.mint} style={{ marginRight: 6 }} />
               <Text style={styles.sealedBadgeText}>SEALED ON SUI</Text>
             </View>
-            <Text style={styles.heroTitle}>Proof Details</Text>
-            <Text style={styles.heroId}>Object: {id?.slice(0, 16)}...</Text>
+            <Text style={styles.heroId}>{id?.slice(0, 8)}…{id?.slice(-4)}</Text>
           </View>
         </FadeUp>
 
@@ -199,24 +186,35 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: { color: C.slate, fontSize: 16 },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "rgba(20,28,52,0.65)", borderWidth: 1, borderColor: C.glassBorder,
-    alignItems: "center", justifyContent: "center", marginLeft: 16,
+    // Deleted - replaced by PageHeader
   },
-  backIcon: { color: C.silver, fontSize: 20 },
   shareBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "rgba(20,28,52,0.65)", borderWidth: 1, borderColor: C.glassBorder,
-    alignItems: "center", justifyContent: "center", marginRight: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  hero: { marginBottom: 24 },
+  heroRowContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 24,
+    marginTop: 8,
+  },
   sealedBadge: {
-    alignSelf: "flex-start", backgroundColor: "rgba(64,224,163,0.12)",
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(64,224,163,0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 100,
   },
   sealedBadgeText: { color: C.mint, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
-  heroTitle: { fontSize: 28, fontWeight: "800", color: C.textPrimary },
-  heroId: { fontSize: 12, color: C.slate, fontFamily: "monospace", marginTop: 4 },
+  heroId: { fontSize: 12, color: C.slate, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   imageContainer: { aspectRatio: 1, borderRadius: 24, overflow: "hidden", backgroundColor: "#050813" },
   image: { width: "100%", height: "100%" },
   placeholder: { flex: 1, alignItems: "center", justifyContent: "center" },

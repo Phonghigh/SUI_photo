@@ -225,17 +225,26 @@ export function GlowBackground({
 interface PageHeaderProps {
   title: string;
   onBack?: () => void;
+  rightElement?: React.ReactNode;
 }
 
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-export function PageHeader({ title, onBack }: PageHeaderProps) {
+export function PageHeader({ title, onBack, rightElement }: PageHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const handleBack = onBack || (() => router.push("/"));
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  };
 
   return (
     <View style={[s.headerWrap, { paddingTop: insets.top + 10 }]}>
@@ -243,13 +252,16 @@ export function PageHeader({ title, onBack }: PageHeaderProps) {
         onPress={handleBack} 
         style={s.headerBackBtn}
         activeOpacity={0.7}
+        hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
       >
         <Feather name="arrow-left" size={22} color={C.silver} />
       </TouchableOpacity>
 
-      <Text style={s.headerTitle}>{title}</Text>
+      <Text style={s.headerTitle} numberOfLines={1}>{title}</Text>
       
-      <StatusPill />
+      <View style={{ minWidth: 44, alignItems: "flex-end" }}>
+        {rightElement || <StatusPill />}
+      </View>
     </View>
   );
 }

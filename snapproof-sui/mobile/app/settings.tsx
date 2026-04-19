@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { GlowBackground, GlassCard, CyanButton, CoralButton } from "../src/components/Glass";
+import { GlowBackground, GlassCard, CyanButton, CoralButton, PageHeader } from "../src/components/Glass";
 import { C, TYPE } from "../src/theme/tokens";
 import { FadeUp } from "../src/components/FadeUp";
 import { getSettings, updateSettings, type AppSettings } from "../src/services/settings";
@@ -55,26 +55,12 @@ export default function SettingsScreen() {
 
   return (
     <GlowBackground topColor="rgba(60,200,240,0.2)" bottomColor="rgba(240,86,110,0.15)">
-      <Stack.Screen
-        options={{
-          headerTransparent: true,
-          headerTitle: "",
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backBtn}
-              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-            >
-              <Feather name="arrow-left" size={20} color={C.silver} />
-            </TouchableOpacity>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
+
+      <PageHeader title="Settings" />
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: headerHeight + 16 }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: 16 }]}
         showsVerticalScrollIndicator={false}
       >
         

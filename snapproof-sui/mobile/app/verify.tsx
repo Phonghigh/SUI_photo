@@ -119,12 +119,7 @@ export default function VerifyScreen() {
         
         {phase === "idle" && (
           <>
-            <FadeUp delay={0}>
-              <View style={styles.hero}>
-                <Text style={styles.eyebrow}>Verify</Text>
-                <Text style={styles.heroTitle}>Check Authenticity</Text>
-              </View>
-            </FadeUp>
+            {/* Hero section removed - title is in PageHeader */}
 
             <FadeUp delay={60}>
               <TouchableOpacity onPress={pickImage} activeOpacity={0.85}>
