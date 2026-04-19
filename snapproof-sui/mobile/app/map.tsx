@@ -40,7 +40,7 @@ export default function MapScreen() {
           
           if (isNaN(latitude) || isNaN(longitude)) return null;
 
-          return {
+          const proof: Proof = {
             id: p.proofHash.slice(0, 10),
             latitude,
             longitude,
@@ -49,6 +49,7 @@ export default function MapScreen() {
             verified: true,
             hot: Date.now() - (p.createdAt || 0) < 3600000,
           };
+          return proof;
         })
         .filter((p): p is Proof => p !== null);
       setProofs(mapped);
