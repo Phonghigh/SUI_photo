@@ -6,6 +6,7 @@ import { C } from "../theme/tokens";
 
 export interface Proof {
   id: string;
+  objectId?: string;
   latitude: number;
   longitude: number;
   location: string;

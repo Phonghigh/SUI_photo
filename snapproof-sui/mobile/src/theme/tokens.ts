@@ -26,6 +26,10 @@ export const C = {
   cyanGlow:     "#55d0f5",   // hsl(200 95% 65%)
   cyanBorder:   "rgba(60,200,240,0.22)",
 
+  // --- Accent: Purple / Mystery ---
+  purple:       "#a855f7",   // hsl(270 91% 65%)
+  purpleGlow:   "#c084fc",   // hsl(270 95% 75%)
+
   // --- Success: Mint ---
   mint:         "#40e0a3",   // hsl(158 75% 55%)
   mintBg:       "rgba(64,224,163,0.10)",

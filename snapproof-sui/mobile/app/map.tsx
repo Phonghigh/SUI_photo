@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   Animated,
+  Linking,
 } from "react-native";
 import { Stack, Link, useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
@@ -37,6 +38,12 @@ export default function MapScreen() {
   const [selected, setSelected] = useState<Proof | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const handleViewExplorer = () => {
+    if (!selected?.objectId) return;
+    const url = `https://suiscan.xyz/${SUI_NETWORK}/object/${selected.objectId}`;
+    Linking.openURL(url).catch((err) => console.error("Couldn't load page", err));
+  };
+
   const fetchGeoProofs = async () => {
     try {
       setLoading(true);
@@ -52,6 +59,7 @@ export default function MapScreen() {
 
           const proof: Proof = {
             id: p.proofHash.slice(0, 10),
+            objectId: p.objectId,
             latitude,
             longitude,
             location: p.coarseGeoHash || "Unknown",
@@ -243,7 +251,11 @@ export default function MapScreen() {
                 <Text style={styles.detailSub}>
                   Captured {selected.time} · Sui Mainnet
                 </Text>
-                <TouchableOpacity style={styles.explorerBtn}>
+                <TouchableOpacity 
+                  style={styles.explorerBtn}
+                  onPress={handleViewExplorer}
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.explorerBtnText}>View on explorer ↗</Text>
                 </TouchableOpacity>
               </View>
