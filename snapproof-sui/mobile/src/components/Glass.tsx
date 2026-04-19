@@ -3,10 +3,10 @@
  * Matches the template's .glass / .glass-cyan / bg-gradient-coral system,
  * implemented with expo-linear-gradient and the RN Animated API.
  */
-import React from "react";
-import { View, TouchableOpacity, StyleSheet, Text, type ViewStyle, type StyleProp } from "react-native";
+import { View, TouchableOpacity, StyleSheet, Text, Animated, Easing, Platform, type ViewStyle, type StyleProp } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { C, SHADOWS } from "../theme/tokens";
+import { useEffect, useRef } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -179,6 +179,72 @@ export function StatusPill({ network = "Sui", status = "Testnet" }: StatusPillPr
   );
 }
 
+// ─── Grid Overlay ─────────────────────────────────────────────────────────────
+function GridOverlay() {
+  return (
+    <View style={[StyleSheet.absoluteFill, { opacity: 0.03 }]} pointerEvents="none">
+      {Array.from({ length: 20 }).map((_, i) => (
+        <View key={`h-${i}`} style={{ position: "absolute", top: `${i * 5}%`, left: 0, right: 0, height: 1, backgroundColor: "#fff" }} />
+      ))}
+      {Array.from({ length: 12 }).map((_, i) => (
+        <View key={`v-${i}`} style={{ position: "absolute", left: `${i * 8.33}%`, top: 0, bottom: 0, width: 1, backgroundColor: "#fff" }} />
+      ))}
+    </View>
+  );
+}
+
+// ─── Stars ────────────────────────────────────────────────────────────────────
+// Individual twinkling star component
+function TwinklingStar({ size, top, left, delay }: { size: number, top: string, left: string, delay: number }) {
+  const opacity = useRef(new Animated.Value(Math.random() * 0.5 + 0.2)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.1,
+          duration: 1500 + Math.random() * 1000,
+          delay: delay,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.8,
+          duration: 1500 + Math.random() * 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        position: "absolute",
+        top,
+        left,
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: "#fff",
+        opacity,
+        shadowColor: "#fff",
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: size,
+      }}
+    />
+  );
+}
+
+// Pre-generate star positions to avoid re-renders
+const STARS_DATA = Array.from({ length: 40 }).map((_, i) => ({
+  id: i,
+  size: Math.random() * 2 + 1,
+  top: `${Math.random() * 100}%`,
+  left: `${Math.random() * 100}%`,
+  delay: Math.random() * 3000,
+}));
+
 // ─── GlowBackground ───────────────────────────────────────────────────────────
 // Page-level atmospheric background: deep midnight + 2 radial blobs
 
@@ -191,30 +257,56 @@ interface GlowBgProps {
 
 export function GlowBackground({
   children,
-  topColor = "rgba(240,86,110,0.28)",
-  bottomColor = "rgba(60,200,240,0.22)",
+  topColor = "#ff0080", // Fuchsia
+  bottomColor = "#7928ca", // Purple
   style,
 }: GlowBgProps) {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 30000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, []);
+
+  const rotate = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  const moveX = (d: number) => anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, d, 0] });
+  const moveY = (d: number) => anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, d, 0] });
+
   return (
     <View style={[s.bgWrap, style]}>
-      {/* Deep midnight base */}
+      {/* Deepest Base */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: "#020408" }]} />
+      
+      {/* Hyper-Mesh Blobs */}
+      <Animated.View style={[s.blob, { top: -100, left: -50, width: 400, height: 400, backgroundColor: topColor, transform: [{ translateX: moveX(40) }, { translateY: moveY(20) }, { rotate }] }]} />
+      <Animated.View style={[s.blob, { bottom: -100, right: -50, width: 500, height: 500, backgroundColor: bottomColor, transform: [{ translateX: moveX(-30) }, { translateY: moveY(-50) }] }]} />
+      <Animated.View style={[s.blob, { top: "30%", right: -150, width: 350, height: 350, backgroundColor: "#00dfd8", transform: [{ translateX: moveX(-60) }, { translateY: moveY(40) }] }]} />
+      <Animated.View style={[s.blob, { bottom: "20%", left: -100, width: 300, height: 300, backgroundColor: "#4facfe", transform: [{ rotate }] }]} />
+
+      <GridOverlay />
+
+      {/* Twinkling Stars */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {STARS_DATA.map(star => (
+          <TwinklingStar key={star.id} {...star} />
+        ))}
+      </View>
+
       <LinearGradient
-        colors={[C.bgDeep, "#080d1e", C.bg]}
-        locations={[0, 0.5, 1]}
+        colors={["rgba(2,4,8,0.7)", "rgba(2,4,8,0.2)", "rgba(2,4,8,0.8)"]}
         style={StyleSheet.absoluteFill}
       />
-      {/* Top radial blob */}
-      <LinearGradient
-        colors={[topColor, "transparent"]}
-        style={s.topBlob}
-        pointerEvents="none"
-      />
-      {/* Bottom radial blob */}
-      <LinearGradient
-        colors={[bottomColor, "transparent"]}
-        style={s.bottomBlob}
-        pointerEvents="none"
-      />
+
       {children}
     </View>
   );
@@ -362,22 +454,12 @@ const s = StyleSheet.create({
   },
 
   // GlowBackground
-  bgWrap: { flex: 1, backgroundColor: C.bgDeep },
-  topBlob: {
+  bgWrap: { flex: 1, backgroundColor: "#020408", overflow: "hidden" },
+  blob: {
     position: "absolute",
-    top: -80,
-    right: -80,
-    width: 360,
-    height: 360,
-    borderRadius: 180,
-  },
-  bottomBlob: {
-    position: "absolute",
-    bottom: -100,
-    left: -100,
-    width: 400,
-    height: 400,
-    borderRadius: 200,
+    borderRadius: 1000,
+    opacity: 0.15,
+    filter: Platform.OS === 'ios' ? 'blur(100px)' : undefined,
   },
   // PageHeader
   headerWrap: {
