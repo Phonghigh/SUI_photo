@@ -30,8 +30,6 @@ export default withSentryConfig(nextConfig, {
   // This can increase your server load as well as your Sentry bill.
   tunnelRoute: "/monitoring",
 
-  // Hides source maps from generated client bundles
-  hideSourceMaps: true,
 
   // Automatically tree-shake Sentry logger statements to reduce bundle size
   disableLogger: true,

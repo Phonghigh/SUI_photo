@@ -2,6 +2,10 @@
 
 Documentation for SnapProof is split into two tracks based on who's reading.
 
+## Start here
+
+- [`PROJECT.md`](./PROJECT.md) — end-to-end project documentation: the problem SnapProof resolves, the real-world scenarios it handles, the Sui features it applies today, the pain points that still need work, and the Sui capabilities that can close those gaps. Best single document for anyone evaluating the project from scratch.
+
 ## Overview track (for non-developers)
 
 Start here if you're evaluating the project — hackathon judge, product reviewer, or first-time reader who just wants to know what this is and see it working.
