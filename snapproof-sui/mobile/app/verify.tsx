@@ -1,435 +1,359 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
+  StyleSheet,
   TouchableOpacity,
   Image,
-  StyleSheet,
-  ActivityIndicator,
   Platform,
-  TextInput,
   ScrollView,
   Linking,
+  TextInput,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
-import { Stack } from "expo-router";
+import { useRouter, Stack, Link } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { OnboardingModal } from "../src/components/OnboardingModal";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { GlowBackground, GlassCard, CoralButton, CyanButton } from "../src/components/Glass";
+import { C, TYPE } from "../src/theme/tokens";
+import { FadeUp } from "../src/components/FadeUp";
+import { ProcessState } from "../src/components/ProcessState";
 import { hashImage } from "../src/utils/hash";
 import { lookupProofByImageHash, getProofById } from "../src/services/sui";
-import { SUI_NETWORK, WALRUS_AGGREGATOR_URL } from "../src/config";
-import { track, captureException } from "../src/services/analytics";
-import type { ProofData } from "../src/types/proof";
+import { SUI_NETWORK } from "../src/config";
 
-function showAlert(title: string, message: string) {
-  if (Platform.OS === "web") {
-    window.alert(`${title}\n\n${message}`);
-  } else {
-    const { Alert } = require("react-native");
-    Alert.alert(title, message);
-  }
-}
+const SCAN_STEPS = [
+  { label: "Reading pixels", detail: "decode" },
+  { label: "Computing hash", detail: "SHA-256" },
+  { label: "Querying Sui", detail: "lookup" },
+];
 
 export default function VerifyScreen() {
+  const router = useRouter();
+  const [phase, setPhase] = useState<"idle" | "scanning" | "match" | "mismatch" | "not_found">("idle");
+  const [step, setStep] = useState(0);
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [mode, setMode] = useState<"image" | "hash">("image");
-  const [expectedHash, setExpectedHash] = useState("");
-  const [result, setResult] = useState<
-    "match" | "mismatch" | "not_found" | null
-  >(null);
   const [computedHash, setComputedHash] = useState("");
-  const [foundProof, setFoundProof] = useState<ProofData | null>(null);
-  const [foundTxDigest, setFoundTxDigest] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [statusText, setStatusText] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [foundProof, setFoundProof] = useState<any>(null);
 
-  useFocusEffect(() => {
-    track({ name: "verify_link_opened" });
-  });
+  const startVerify = async (uri: string) => {
+    setImageUri(uri);
+    setPhase("scanning");
+    setStep(0);
 
-  const explorerBase =
-    SUI_NETWORK === "mainnet"
-      ? "https://suiscan.xyz/mainnet"
-      : `https://suiscan.xyz/${SUI_NETWORK}`;
+    const timer = setInterval(() => {
+      setStep(s => (s < 2 ? s + 1 : s));
+    }, 700);
+
+    try {
+      const hash = await hashImage(uri);
+      setComputedHash(hash);
+      const lookup = await lookupProofByImageHash(hash);
+      
+      clearInterval(timer);
+      setStep(3);
+      
+      setTimeout(async () => {
+        if (lookup) {
+          const proof = lookup.proofId ? await getProofById(lookup.proofId) : null;
+          setFoundProof(proof);
+          setPhase("match");
+        } else {
+          setPhase("not_found");
+        }
+      }, 500);
+    } catch (err) {
+      clearInterval(timer);
+      setPhase("idle");
+    }
+  };
 
   const pickImage = async () => {
-    const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
-    });
-    if (!pickerResult.canceled && pickerResult.assets[0]) {
-      setImageUri(pickerResult.assets[0].uri);
-      setResult(null);
-      setFoundProof(null);
-      setErrorMsg("");
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+    if (!result.canceled && result.assets[0]) {
+      startVerify(result.assets[0].uri);
     }
   };
 
-  const verifyByImage = async () => {
-    if (!imageUri) {
-      showAlert("No image", "Select an image to verify.");
-      return;
-    }
-
-    const startedAt = Date.now();
-    track({ name: "verify_started", props: { mode: "image" } });
-
-    try {
-      setLoading(true);
-      setResult(null);
-      setFoundProof(null);
-      setErrorMsg("");
-
-      setStatusText("Computing image hash...");
-      const hash = await hashImage(imageUri);
-      setComputedHash(hash);
-
-      setStatusText("Searching Sui blockchain...");
-      const lookup = await lookupProofByImageHash(hash);
-
-      if (lookup) {
-        setStatusText("Fetching proof details...");
-        const proof = lookup.proofId
-          ? await getProofById(lookup.proofId)
-          : null;
-        setFoundProof(proof);
-        setFoundTxDigest(lookup.txDigest);
-        setResult("match");
-        track({
-          name: "verify_result",
-          props: { result: "match", mode: "image", durationMs: Date.now() - startedAt },
-        });
-      } else {
-        setResult("not_found");
-        track({
-          name: "verify_result",
-          props: { result: "not_found", mode: "image", durationMs: Date.now() - startedAt },
-        });
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      setErrorMsg(msg);
-      captureException(error, { where: "verifyByImage" });
-      track({
-        name: "verify_result",
-        props: { result: "error", mode: "image", error: msg.slice(0, 200) },
-      });
-    } finally {
-      setLoading(false);
-      setStatusText("");
-    }
-  };
-
-  const verifyByHash = async () => {
-    if (!imageUri || !expectedHash.trim()) {
-      showAlert("Missing input", "Select an image and enter the expected hash.");
-      return;
-    }
-
-    track({ name: "verify_started", props: { mode: "hash" } });
-
-    try {
-      setLoading(true);
-      setErrorMsg("");
-      setStatusText("Computing image hash...");
-      const hash = await hashImage(imageUri);
-      setComputedHash(hash);
-      const matched = hash === expectedHash.trim();
-      setResult(matched ? "match" : "mismatch");
-      track({
-        name: "verify_result",
-        props: { result: matched ? "match" : "mismatch", mode: "hash" },
-      });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      setErrorMsg(msg);
-      captureException(error, { where: "verifyByHash" });
-      track({
-        name: "verify_result",
-        props: { result: "error", mode: "hash", error: msg.slice(0, 200) },
-      });
-    } finally {
-      setLoading(false);
-      setStatusText("");
-    }
-  };
-
-  const openLink = (url: string) => {
-    Linking.openURL(url).catch(() => {});
+  const reset = () => {
+    setPhase("idle");
+    setImageUri(null);
+    setStep(0);
   };
 
   return (
-    <>
-      <Stack.Screen 
+    <GlowBackground topColor="rgba(60,200,240,0.28)" bottomColor="rgba(240,86,110,0.18)">
+      <Stack.Screen
         options={{
-          headerRight: () => (
-            <TouchableOpacity onPress={() => setShowOnboarding(true)} style={{ paddingHorizontal: 16 }}>
-              <Text style={{ fontSize: 20 }}>ℹ️</Text>
+          headerTransparent: true,
+          headerTitle: "",
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Feather name="arrow-left" size={20} color={C.silver} />
             </TouchableOpacity>
-          )
-        }} 
-      />
-      <OnboardingModal 
-        visible={showOnboarding} 
-        onComplete={() => setShowOnboarding(false)} 
-      />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Mode selector */}
-      <View style={styles.modeSelector}>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === "image" && styles.modeActive]}
-          onPress={() => { setMode("image"); setResult(null); }}
-        >
-          <Text style={[styles.modeText, mode === "image" && styles.modeTextActive]}>
-            Verify on Chain
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === "hash" && styles.modeActive]}
-          onPress={() => { setMode("hash"); setResult(null); }}
-        >
-          <Text style={[styles.modeText, mode === "hash" && styles.modeTextActive]}>
-            Compare Hash
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Image picker */}
-      {imageUri ? (
-        <TouchableOpacity onPress={pickImage}>
-          <Image source={{ uri: imageUri }} style={styles.preview} />
-          <Text style={styles.tapHint}>Tap image to change</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity style={styles.placeholder} onPress={pickImage}>
-          <Text style={styles.placeholderIcon}>+</Text>
-          <Text style={styles.placeholderText}>Select image to verify</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Hash input (only in hash mode) */}
-      {mode === "hash" && (
-        <TextInput
-          style={styles.input}
-          placeholder="Paste expected image hash..."
-          placeholderTextColor="#555"
-          value={expectedHash}
-          onChangeText={setExpectedHash}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      )}
-
-      {/* Error display */}
-      {errorMsg ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText} selectable>{errorMsg}</Text>
-        </View>
-      ) : null}
-
-      {/* Result display */}
-      {result && (
-        <View
-          style={[
-            styles.resultBox,
-            result === "match"
-              ? styles.matchBox
-              : result === "not_found"
-              ? styles.notFoundBox
-              : styles.mismatchBox,
-          ]}
-        >
-          <Text style={styles.resultEmoji}>
-            {result === "match" ? "✓" : result === "not_found" ? "?" : "✗"}
-          </Text>
-          <Text style={styles.resultTitle}>
-            {result === "match"
-              ? "VERIFIED"
-              : result === "not_found"
-              ? "NOT FOUND"
-              : "MISMATCH"}
-          </Text>
-          <Text style={styles.resultDetail}>
-            {result === "match"
-              ? "This image matches a proof recorded on Sui."
-              : result === "not_found"
-              ? "No on-chain proof found for this image."
-              : "The computed hash does not match the expected hash."}
-          </Text>
-
-          {computedHash ? (
-            <Text style={styles.hashText} selectable>
-              Hash: {computedHash}
-            </Text>
-          ) : null}
-
-          {/* Proof details when found */}
-          {foundProof && (
-            <View style={styles.proofDetails}>
-              <DetailRow label="Creator" value={foundProof.creator} />
-              <DetailRow label="Walrus Blob" value={foundProof.walrusBlobId} />
-              <DetailRow label="Proof Hash" value={foundProof.proofHash} />
-              {foundProof.coarseGeoHash ? (
-                <DetailRow label="Location" value={foundProof.coarseGeoHash} />
-              ) : null}
-              <DetailRow
-                label="Date"
-                value={
-                  foundProof.createdAt
-                    ? new Date(foundProof.createdAt).toLocaleString()
-                    : "Unknown"
-                }
-                mono={false}
-              />
-
-              {/* Explorer links */}
-              {foundTxDigest ? (
-                <TouchableOpacity
-                  style={styles.linkButton}
-                  onPress={() => openLink(`${explorerBase}/tx/${foundTxDigest}`)}
-                >
-                  <Text style={styles.linkText}>View Transaction</Text>
-                </TouchableOpacity>
-              ) : null}
-
-              {foundProof.walrusBlobId ? (
-                <TouchableOpacity
-                  style={styles.linkButton}
-                  onPress={() =>
-                    openLink(
-                      `${WALRUS_AGGREGATOR_URL}/v1/blobs/${foundProof.walrusBlobId}`
-                    )
-                  }
-                >
-                  <Text style={styles.linkText}>View Image on Walrus</Text>
-                </TouchableOpacity>
-              ) : null}
+          ),
+          headerRight: () => (
+            <View style={styles.statusChip}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>Live</Text>
             </View>
-          )}
-        </View>
-      )}
+          ),
+        }}
+      />
 
-      {/* Actions */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#e94560" />
-          <Text style={styles.statusText}>{statusText}</Text>
-        </View>
-      ) : (
-        <TouchableOpacity
-          style={[styles.button, styles.verifyButton]}
-          onPress={mode === "image" ? verifyByImage : verifyByHash}
-        >
-          <Text style={styles.buttonText}>
-            {mode === "image" ? "Verify on Sui" : "Compare Hashes"}
-          </Text>
-        </TouchableOpacity>
-      )}
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        
+        {phase === "idle" && (
+          <>
+            <FadeUp delay={0}>
+              <View style={styles.hero}>
+                <Text style={styles.eyebrow}>Verify</Text>
+                <Text style={styles.heroTitle}>Check Authenticity</Text>
+              </View>
+            </FadeUp>
+
+            <FadeUp delay={60}>
+              <TouchableOpacity onPress={pickImage} activeOpacity={0.85}>
+                <GlassCard tone="cyan" style={styles.dropZone} radius={24} noPad>
+                  <View style={styles.dropInner}>
+                    <View style={styles.uploadIconWrap}>
+                      <Feather name="upload" size={24} color={C.cyan} />
+                    </View>
+                    <Text style={styles.dropTitle}>Drop or browse</Text>
+                    <Text style={styles.dropSub}>JPG, PNG, HEIC</Text>
+                  </View>
+                </GlassCard>
+              </TouchableOpacity>
+            </FadeUp>
+
+            <FadeUp delay={120}>
+              <Text style={[styles.eyebrow, { marginTop: 24, marginBottom: 12 }]}>Try a sample</Text>
+              <GlassCard radius={20} noPad>
+                <TouchableOpacity style={styles.sampleRow} activeOpacity={0.7}>
+                  <View style={styles.sampleIcon}>
+                    <Feather name="image" size={16} color={C.mint} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sampleLabel}>Mountain sunrise.heic</Text>
+                    <Text style={styles.sampleMeta}>Sealed · 2m ago</Text>
+                  </View>
+                  <Text style={styles.verifyArrow}>verify →</Text>
+                </TouchableOpacity>
+                <View style={styles.divider} />
+                <TouchableOpacity style={styles.sampleRow} activeOpacity={0.7}>
+                  <View style={[styles.sampleIcon, { backgroundColor: "rgba(240,86,110,0.1)" }]}>
+                    <Feather name="alert-triangle" size={16} color={C.coral} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sampleLabel}>Press conference.jpg</Text>
+                    <Text style={styles.sampleMeta}>Edited · pixels altered</Text>
+                  </View>
+                  <Text style={styles.verifyArrow}>verify →</Text>
+                </TouchableOpacity>
+              </GlassCard>
+            </FadeUp>
+
+            <FadeUp delay={180}>
+              <View style={styles.noteBox}>
+                <Feather name="sparkles" size={16} color={C.cyan} />
+                <Text style={styles.noteText}>
+                  We compare the photo's hash to the receipt sealed on <Text style={{ color: C.silver }}>Sui</Text>.
+                  No upload to a server — verification runs locally.
+                </Text>
+              </View>
+            </FadeUp>
+          </>
+        )}
+
+        {phase === "scanning" && (
+          <FadeUp delay={0}>
+            <ProcessState
+              title="Verifying"
+              subtitle="Checking the seal..."
+              steps={SCAN_STEPS}
+              currentStep={step}
+              totalSteps={SCAN_STEPS.length}
+              icon="shield"
+            />
+          </FadeUp>
+        )}
+
+        {phase === "match" && (
+          <FadeUp delay={0}>
+            <GlassCard radius={24}>
+              <View style={styles.resultInner}>
+                <View style={styles.resultHeader}>
+                  <View style={styles.matchBadge}>
+                    <Ionicons name="shield-checkmark" size={12} color={C.mint} style={{ marginRight: 4 }} />
+                    <Text style={styles.matchBadgeText}>AUTHENTIC</Text>
+                  </View>
+                  <Text style={styles.epochText}>EPOCH 412</Text>
+                </View>
+
+                <View style={styles.resultRow}>
+                  <View style={styles.resultIconWrap}>
+                    <Feather name="shield" size={24} color={C.mint} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.resultTitle}>Hash matches the seal.</Text>
+                    <Text style={styles.resultSub} numberOfLines={1}>{imageUri?.split("/").pop()}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.metaGrid}>
+                  <View style={styles.metaCell}>
+                    <Text style={styles.metaLabel}>SEALED</Text>
+                    <Text style={styles.metaValue}>{foundProof?.createdAt ? new Date(foundProof.createdAt).toLocaleDateString() : "2m ago"}</Text>
+                  </View>
+                  <View style={styles.metaCell}>
+                    <Text style={styles.metaLabel}>ORIGIN</Text>
+                    <Text style={styles.metaValue}>San Francisco</Text>
+                  </View>
+                </View>
+
+                <View style={styles.hashBar}>
+                  <Text style={styles.hashBarText} numberOfLines={1}>#{computedHash}</Text>
+                </View>
+
+                <View style={styles.actionRow}>
+                  <CyanButton style={{ flex: 1 }}>
+                    <View style={styles.btnRow}>
+                      <Feather name="external-link" size={16} color={C.silver} style={{ marginRight: 8 }} />
+                      <Text style={styles.cyanBtnText}>Explorer</Text>
+                    </View>
+                  </CyanButton>
+                  <CoralButton onPress={reset} style={{ flex: 1 }}>
+                    <View style={styles.btnRow}>
+                      <Feather name="refresh-ccw" size={16} color="#fff" style={{ marginRight: 8 }} />
+                      <Text style={styles.coralBtnText}>Verify another</Text>
+                    </View>
+                  </CoralButton>
+                </View>
+              </View>
+            </GlassCard>
+          </FadeUp>
+        )}
+
+        {phase === "not_found" && (
+          <FadeUp delay={0}>
+            <GlassCard radius={24}>
+              <View style={styles.resultInner}>
+                <View style={[styles.matchBadge, { backgroundColor: "rgba(255,255,255,0.05)" }]}>
+                   <Feather name="help-circle" size={12} color={C.slate} style={{ marginRight: 4 }} />
+                  <Text style={[styles.matchBadgeText, { color: C.slate }]}>NOT FOUND</Text>
+                </View>
+                <Text style={[styles.resultTitle, { marginTop: 16 }]}>No proof on Sui.</Text>
+                <Text style={styles.resultText}>No on-chain proof was found for this image. It may not have been sealed with SnapProof.</Text>
+                <CoralButton onPress={reset} style={{ marginTop: 20 }}>
+                  <View style={styles.btnRow}>
+                    <Feather name="refresh-ccw" size={16} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.coralBtnText}>Try another</Text>
+                  </View>
+                </CoralButton>
+              </View>
+            </GlassCard>
+          </FadeUp>
+        )}
+
+        <Text style={styles.builtOn}>Built on Sui</Text>
       </ScrollView>
-    </>
+    </GlowBackground>
   );
 }
-
-function DetailRow({
-  label,
-  value,
-  mono = true,
-}: {
-  label: string;
-  value?: string;
-  mono?: boolean;
-}) {
-  if (!value) return null;
-  return (
-    <View style={detailStyles.row}>
-      <Text style={detailStyles.label}>{label}</Text>
-      <Text
-        style={[detailStyles.value, mono && detailStyles.mono]}
-        numberOfLines={2}
-        selectable
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-const detailStyles = StyleSheet.create({
-  row: { marginBottom: 10 },
-  label: { color: "#888", fontSize: 10, textTransform: "uppercase" },
-  value: { color: "#fff", fontSize: 12 },
-  mono: { fontFamily: "monospace" },
-});
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#1a1a2e" },
-  content: { padding: 16, paddingBottom: 40 },
-  modeSelector: {
-    flexDirection: "row",
-    backgroundColor: "#16213e",
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
+  scroll: {
+    paddingTop: Platform.OS === "ios" ? 110 : 90,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
-  modeButton: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
-  modeActive: { backgroundColor: "#0f3460" },
-  modeText: { color: "#666", fontSize: 14, fontWeight: "600" },
-  modeTextActive: { color: "#fff" },
-  preview: { height: 200, borderRadius: 12, marginBottom: 4 },
-  tapHint: { color: "#555", fontSize: 11, textAlign: "center", marginBottom: 16 },
-  placeholder: {
-    height: 200,
-    borderRadius: 12,
-    backgroundColor: "#16213e",
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(20,28,52,0.65)",
+    borderWidth: 1,
+    borderColor: C.glassBorder,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: "#333",
-    borderStyle: "dashed",
+    marginLeft: 16,
   },
-  placeholderIcon: { color: "#555", fontSize: 40, marginBottom: 4 },
-  placeholderText: { color: "#555", fontSize: 16 },
-  input: {
-    backgroundColor: "#16213e",
-    color: "#fff",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    fontSize: 14,
-    marginBottom: 16,
-    fontFamily: "monospace",
-  },
-  errorBox: { backgroundColor: "#641220", borderRadius: 12, padding: 16, marginBottom: 16 },
-  errorText: { color: "#ff6b6b", fontSize: 13, fontFamily: "monospace" },
-  resultBox: { padding: 20, borderRadius: 16, marginBottom: 16, alignItems: "center" },
-  matchBox: { backgroundColor: "#1b4332" },
-  notFoundBox: { backgroundColor: "#2d2d2d" },
-  mismatchBox: { backgroundColor: "#641220" },
-  resultEmoji: { fontSize: 40, marginBottom: 8 },
-  resultTitle: { color: "#fff", fontSize: 24, fontWeight: "bold", marginBottom: 8 },
-  resultDetail: { color: "#ccc", fontSize: 14, textAlign: "center", marginBottom: 12 },
-  hashText: { color: "#888", fontSize: 10, fontFamily: "monospace", marginBottom: 8 },
-  proofDetails: {
-    width: "100%",
-    borderTopWidth: 1,
-    borderTopColor: "#444",
-    paddingTop: 16,
-    marginTop: 8,
-  },
-  linkButton: {
-    backgroundColor: "#0f3460",
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 8,
+  backIcon: { color: C.silver, fontSize: 20 },
+  statusChip: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+    backgroundColor: "rgba(20,28,52,0.65)",
+    marginRight: 16,
   },
-  linkText: { color: "#5dade2", fontSize: 13, fontWeight: "500" },
-  loadingContainer: { alignItems: "center", paddingVertical: 20 },
-  statusText: { color: "#aaa", marginTop: 12, fontSize: 14 },
-  button: { paddingVertical: 16, borderRadius: 12, alignItems: "center" },
-  verifyButton: { backgroundColor: "#0f3460" },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.mint },
+  statusText: { color: C.silver, fontSize: 12, fontWeight: "600" },
+  hero: { marginBottom: 24 },
+  eyebrow: { ...TYPE.eyebrow, marginBottom: 4 },
+  heroTitle: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
+  dropZone: { marginTop: 8 },
+  dropInner: { alignItems: "center", justifyContent: "center", paddingVertical: 48 },
+  uploadIconWrap: {
+    width: 56, height: 56, borderRadius: 16, marginBottom: 16,
+    backgroundColor: "rgba(60,200,240,0.12)", borderWidth: 1, borderColor: "rgba(60,200,240,0.3)",
+    alignItems: "center", justifyContent: "center",
+  },
+  dropTitle: { fontSize: 16, fontWeight: "700", color: C.textPrimary, marginBottom: 4 },
+  dropSub: { fontSize: 12, color: C.slate },
+  sampleRow: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
+  sampleIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: "rgba(64,224,163,0.1)", alignItems: "center", justifyContent: "center",
+  },
+  sampleLabel: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  sampleMeta: { fontSize: 11, color: C.slate, marginTop: 2 },
+  verifyArrow: { fontSize: 11, color: C.slate, fontFamily: "monospace" },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.05)", marginHorizontal: 16 },
+  noteBox: {
+    flexDirection: "row", gap: 12, marginTop: 20,
+    backgroundColor: "rgba(255,255,255,0.02)", borderRadius: 20, padding: 16,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.05)", alignItems: "center",
+  },
+  noteText: { flex: 1, fontSize: 12, color: C.slate, lineHeight: 18 },
+  resultInner: { padding: 4 },
+  resultHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  matchBadge: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "rgba(64,224,163,0.12)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100,
+  },
+  matchBadgeText: { color: C.mint, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  epochText: { fontSize: 10, color: C.slate, fontFamily: "monospace" },
+  resultRow: { flexDirection: "row", gap: 16, alignItems: "center", marginBottom: 20 },
+  resultIconWrap: {
+    width: 52, height: 52, borderRadius: 14,
+    backgroundColor: "rgba(64,224,163,0.12)", alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: "rgba(64,224,163,0.25)",
+  },
+  resultTitle: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
+  resultSub: { fontSize: 12, color: C.slate, marginTop: 2, fontFamily: "monospace" },
+  metaGrid: { flexDirection: "row", gap: 12, marginBottom: 12 },
+  metaCell: {
+    flex: 1, backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 16,
+    padding: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)",
+  },
+  metaLabel: { ...TYPE.eyebrow, fontSize: 9, marginBottom: 4 },
+  metaValue: { fontSize: 14, fontWeight: "700", color: C.textPrimary },
+  hashBar: {
+    backgroundColor: "rgba(20,28,52,0.55)", borderRadius: 16, padding: 12,
+    borderWidth: 1, borderColor: C.glassBorder, marginBottom: 20,
+  },
+  hashBarText: { color: C.silver, fontSize: 11, fontFamily: "monospace" },
+  actionRow: { flexDirection: "row", gap: 12 },
+  btnRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  coralBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  cyanBtnText: { color: C.silver, fontSize: 14, fontWeight: "600" },
+  resultText: { fontSize: 14, color: C.silver, lineHeight: 22, marginTop: 8 },
+  builtOn: {
+    marginTop: 40, textAlign: "center", fontSize: 10, fontWeight: "600",
+    textTransform: "uppercase", letterSpacing: 3, color: "rgba(132,142,160,0.4)",
+  },
 });

@@ -1,282 +1,228 @@
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Linking,
+  Image,
   ScrollView,
+  Platform,
+  Linking,
   Share,
-  Alert,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import * as Clipboard from "expo-clipboard";
-import { SUI_NETWORK, WALRUS_AGGREGATOR_URL, WEB_VERIFIER_URL } from "../src/config";
-import { track } from "../src/services/analytics";
+import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { GlowBackground, GlassCard, CyanButton, CoralButton } from "../src/components/Glass";
+import { C, TYPE } from "../src/theme/tokens";
+import { FadeUp } from "../src/components/FadeUp";
+import { getProofById } from "../src/services/sui";
+import { SUI_NETWORK, WALRUS_AGGREGATOR_URL } from "../src/config";
+import type { ProofData } from "../src/types/proof";
 
-export default function ProofScreen() {
+export default function ProofDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const params = useLocalSearchParams<{
-    imageHash: string;
-    metadataHash: string;
-    proofHash: string;
-    walrusBlobId: string;
-    txDigest: string;
-    objectId: string;
-    createdAt: string;
-    creator: string;
-    coarseGeoHash: string;
-  }>();
+  const [proof, setProof] = useState<ProofData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const formattedDate = params.createdAt
-    ? new Date(Number(params.createdAt)).toLocaleString()
-    : "Unknown";
+  useEffect(() => {
+    if (id) fetchDetail();
+  }, [id]);
 
-  const explorerBase =
-    SUI_NETWORK === "mainnet"
-      ? "https://suiscan.xyz/mainnet"
-      : `https://suiscan.xyz/${SUI_NETWORK}`;
-
-  const txUrl = `${explorerBase}/tx/${params.txDigest}`;
-  const objectUrl = params.objectId
-    ? `${explorerBase}/object/${params.objectId}`
-    : null;
-  const walrusUrl = `${WALRUS_AGGREGATOR_URL}/v1/blobs/${params.walrusBlobId}`;
-
-  const openLink = (url: string) => {
-    Linking.openURL(url).catch((err) =>
-      console.warn("Failed to open URL:", err)
-    );
+  const fetchDetail = async () => {
+    try {
+      setLoading(true);
+      const data = await getProofById(id!);
+      setProof(data);
+    } catch (err) {
+      console.error("Fetch proof error:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const shareProof = async () => {
+  const handleShare = async () => {
+    if (!proof) return;
     try {
       await Share.share({
-        message: [
-          "SnapProof Verification Receipt",
-          "",
-          `Image Hash: ${params.imageHash}`,
-          `Proof Hash: ${params.proofHash}`,
-          `Walrus Blob: ${params.walrusBlobId}`,
-          `Sui TX: ${txUrl}`,
-          `Date: ${formattedDate}`,
-          "",
-          "Verify at: https://snapproof.app/verify",
-        ].join("\n"),
+        message: `Check out this tamper-proof photo proof sealed on Sui: ${id}`,
+        url: `https://suiscan.xyz/${SUI_NETWORK}/object/${id}`,
       });
-      track({ name: "share_tapped" });
-    } catch (error) {
-      console.warn("Share failed:", error);
+    } catch (err) {
+      console.error(err);
     }
   };
 
-  const copyWebLink = async () => {
-    if (!params.objectId) {
-      Alert.alert("Error", "No Object ID available for this proof yet.");
-      return;
-    }
-    const webUrl = `${WEB_VERIFIER_URL}/p/${params.objectId}`;
-    await Clipboard.setStringAsync(webUrl);
-    track({ name: "copy_link_tapped", props: { target: "proof_object" } });
-    Alert.alert("Link Copied", "The web verification link has been copied to your clipboard.");
-  };
+  if (loading) {
+    return (
+      <GlowBackground>
+        <View style={styles.loading}>
+          <Text style={styles.loadingText}>Loading proof...</Text>
+        </View>
+      </GlowBackground>
+    );
+  }
+
+  const imageUrl = proof?.blobId 
+    ? `${WALRUS_AGGREGATOR_URL}/v1/${proof.blobId}`
+    : null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Success badge */}
-      <View style={styles.successBadge}>
-        <Text style={styles.checkmark}>✓</Text>
-        <Text style={styles.successText}>Proof Recorded on Sui</Text>
-      </View>
+    <GlowBackground topColor="rgba(240,86,110,0.22)" bottomColor="rgba(60,200,240,0.28)">
+      <Stack.Screen
+        options={{
+          headerTransparent: true,
+          headerTitle: "",
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Feather name="arrow-left" size={20} color={C.silver} />
+            </TouchableOpacity>
+          ),
+          headerRight: () => (
+            <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
+              <Feather name="share-2" size={18} color={C.silver} />
+            </TouchableOpacity>
+          ),
+        }}
+      />
 
-      {/* Proof details card */}
-      <View style={styles.card}>
-        <Field label="Image Hash" value={params.imageHash} />
-        <Field label="Metadata Hash" value={params.metadataHash} />
-        <Field label="Proof Hash" value={params.proofHash} />
-        <Field label="Walrus Blob ID" value={params.walrusBlobId} />
-        <Field label="Transaction Digest" value={params.txDigest} />
-        {params.objectId ? (
-          <Field label="Object ID" value={params.objectId} />
-        ) : null}
-        <Field label="Creator" value={params.creator} />
-        {params.coarseGeoHash ? (
-          <Field label="Location (Geohash)" value={params.coarseGeoHash} />
-        ) : null}
-        <Field label="Created At" value={formattedDate} mono={false} />
-      </View>
-
-      {/* Links */}
-      <View style={styles.links}>
-        <TouchableOpacity
-          style={styles.linkButton}
-          onPress={() => openLink(txUrl)}
-        >
-          <Text style={styles.linkText}>View on Sui Explorer</Text>
-        </TouchableOpacity>
-
-        {objectUrl && (
-          <TouchableOpacity
-            style={styles.linkButton}
-            onPress={() => openLink(objectUrl)}
-          >
-            <Text style={styles.linkText}>View Proof Object</Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={styles.linkButton}
-          onPress={() => openLink(walrusUrl)}
-        >
-          <Text style={styles.linkText}>View Image on Walrus</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Actions */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity style={[styles.actionButton, styles.copyLinkButton]} onPress={copyWebLink}>
-          <Text style={styles.actionButtonText}>Copy Link</Text>
-        </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         
-        <TouchableOpacity style={[styles.actionButton, styles.shareButton]} onPress={shareProof}>
-          <Text style={styles.actionButtonText}>Share Proof</Text>
-        </TouchableOpacity>
-      </View>
+        <FadeUp delay={0}>
+          <View style={styles.hero}>
+            <View style={styles.sealedBadge}>
+              <Ionicons name="shield-checkmark" size={12} color={C.mint} style={{ marginRight: 6 }} />
+              <Text style={styles.sealedBadgeText}>SEALED ON SUI</Text>
+            </View>
+            <Text style={styles.heroTitle}>Proof Details</Text>
+            <Text style={styles.heroId}>Object: {id?.slice(0, 16)}...</Text>
+          </View>
+        </FadeUp>
 
-      <TouchableOpacity
-        style={styles.homeButton}
-        onPress={() => router.replace("/")}
-      >
-        <Text style={styles.homeButtonText}>Back to Home</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <FadeUp delay={60}>
+          <GlassCard tone="cyan" radius={24} noPad>
+            <View style={styles.imageContainer}>
+              {imageUrl ? (
+                <Image source={{ uri: imageUrl }} style={styles.image} />
+              ) : (
+                <View style={styles.placeholder}>
+                  <Feather name="image" size={32} color={C.slate} />
+                  <Text style={styles.placeholderText}>No image preview</Text>
+                </View>
+              )}
+            </View>
+          </GlassCard>
+        </FadeUp>
+
+        <FadeUp delay={120}>
+          <View style={styles.metaGrid}>
+            <View style={styles.metaCell}>
+              <Text style={styles.metaLabel}>TIMESTAMP</Text>
+              <Text style={styles.metaValue}>
+                {proof?.createdAt ? new Date(proof.createdAt).toLocaleString() : "Unknown"}
+              </Text>
+            </View>
+            <View style={styles.metaCell}>
+              <Text style={styles.metaLabel}>NETWORK</Text>
+              <Text style={styles.metaValue}>{SUI_NETWORK.toUpperCase()}</Text>
+            </View>
+          </View>
+
+          <View style={styles.hashCard}>
+            <Text style={styles.metaLabel}>IMAGE HASH (SHA-256)</Text>
+            <Text style={styles.hashText}>{proof?.proofHash || "Unknown"}</Text>
+          </View>
+
+          {proof?.coarseGeoHash && (
+            <View style={styles.locCard}>
+              <Text style={styles.metaLabel}>COARSE LOCATION</Text>
+              <View style={styles.locRow}>
+                <Feather name="map-pin" size={16} color={C.cyan} style={{ marginRight: 8 }} />
+                <Text style={styles.metaValue}>{proof.coarseGeoHash}</Text>
+              </View>
+            </View>
+          )}
+        </FadeUp>
+
+        <FadeUp delay={180}>
+          <CoralButton
+            onPress={() => Linking.openURL(`https://suiscan.xyz/${SUI_NETWORK}/object/${id}`)}
+            style={styles.explorerBtn}
+          >
+            <View style={styles.btnRow}>
+              <Feather name="external-link" size={18} color="#fff" style={{ marginRight: 10 }} />
+              <Text style={styles.coralBtnText}>View on Explorer</Text>
+            </View>
+          </CoralButton>
+          
+          <CyanButton onPress={() => router.push("/map")} style={{ marginTop: 12 }}>
+            <View style={styles.btnRow}>
+              <Feather name="map-pin" size={16} color={C.silver} style={{ marginRight: 8 }} />
+              <Text style={styles.cyanBtnText}>See on Proof Map</Text>
+            </View>
+          </CyanButton>
+        </FadeUp>
+
+        <Text style={styles.builtOn}>Built on Sui</Text>
+      </ScrollView>
+    </GlowBackground>
   );
 }
-
-function Field({
-  label,
-  value,
-  mono = true,
-}: {
-  label: string;
-  value?: string;
-  mono?: boolean;
-}) {
-  if (!value) return null;
-  return (
-    <View style={fieldStyles.container}>
-      <Text style={fieldStyles.label}>{label}</Text>
-      <Text
-        style={[fieldStyles.value, mono && fieldStyles.mono]}
-        numberOfLines={2}
-        selectable
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-const fieldStyles = StyleSheet.create({
-  container: {
-    marginBottom: 14,
-  },
-  label: {
-    color: "#888",
-    fontSize: 11,
-    textTransform: "uppercase",
-    marginBottom: 3,
-    letterSpacing: 0.5,
-  },
-  value: {
-    color: "#fff",
-    fontSize: 13,
-  },
-  mono: {
-    fontFamily: "monospace",
-  },
-});
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#1a1a2e",
-  },
-  content: {
-    padding: 16,
+  scroll: {
+    paddingTop: Platform.OS === "ios" ? 110 : 90,
+    paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  successBadge: {
-    backgroundColor: "#1b4332",
-    borderRadius: 16,
-    padding: 20,
-    alignItems: "center",
-    marginBottom: 20,
+  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loadingText: { color: C.slate, fontSize: 16 },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(20,28,52,0.65)", borderWidth: 1, borderColor: C.glassBorder,
+    alignItems: "center", justifyContent: "center", marginLeft: 16,
   },
-  checkmark: {
-    fontSize: 36,
-    color: "#4ecca3",
-    marginBottom: 8,
+  backIcon: { color: C.silver, fontSize: 20 },
+  shareBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(20,28,52,0.65)", borderWidth: 1, borderColor: C.glassBorder,
+    alignItems: "center", justifyContent: "center", marginRight: 16,
   },
-  successText: {
-    color: "#4ecca3",
-    fontSize: 18,
-    fontWeight: "bold",
+  hero: { marginBottom: 24 },
+  sealedBadge: {
+    alignSelf: "flex-start", backgroundColor: "rgba(64,224,163,0.12)",
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, marginBottom: 12,
   },
-  card: {
-    backgroundColor: "#16213e",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+  sealedBadgeText: { color: C.mint, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  heroTitle: { fontSize: 28, fontWeight: "800", color: C.textPrimary },
+  heroId: { fontSize: 12, color: C.slate, fontFamily: "monospace", marginTop: 4 },
+  imageContainer: { aspectRatio: 1, borderRadius: 24, overflow: "hidden", backgroundColor: "#050813" },
+  image: { width: "100%", height: "100%" },
+  placeholder: { flex: 1, alignItems: "center", justifyContent: "center" },
+  placeholderText: { color: C.slate, fontSize: 14, marginTop: 12 },
+  metaGrid: { flexDirection: "row", gap: 12, marginTop: 24 },
+  metaCell: {
+    flex: 1, backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)",
   },
-  links: {
-    gap: 8,
-    marginBottom: 20,
+  metaLabel: { ...TYPE.eyebrow, fontSize: 10, marginBottom: 6 },
+  metaValue: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
+  hashCard: {
+    backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)", marginTop: 12,
   },
-  linkButton: {
-    backgroundColor: "#16213e",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#0f3460",
+  hashText: { fontSize: 12, fontFamily: "monospace", color: C.silver, lineHeight: 18 },
+  locCard: {
+    backgroundColor: "rgba(60,200,240,0.05)", borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: "rgba(60,200,240,0.15)", marginTop: 12,
   },
-  linkText: {
-    color: "#5dade2",
-    fontSize: 14,
-    textAlign: "center",
-    fontWeight: "500",
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 12,
-  },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  copyLinkButton: {
-    backgroundColor: "#0f3460",
-  },
-  shareButton: {
-    backgroundColor: "#533483",
-  },
-  actionButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  homeButton: {
-    backgroundColor: "#e94560",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  homeButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  locRow: { flexDirection: "row", alignItems: "center" },
+  btnRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  explorerBtn: { marginTop: 24 },
+  coralBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  cyanBtnText: { color: C.silver, fontSize: 14, fontWeight: "600" },
+  builtOn: {
+    marginTop: 40, textAlign: "center", fontSize: 10, fontWeight: "600",
+    textTransform: "uppercase", letterSpacing: 3, color: "rgba(132,142,160,0.4)",
   },
 });

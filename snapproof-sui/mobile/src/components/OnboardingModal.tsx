@@ -6,9 +6,16 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
+  Dimensions,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import { exportSecretKey } from "../services/wallet";
+import { GlassCard, CoralButton, CyanButton } from "./Glass";
+import { C, TYPE } from "../theme/tokens";
+import { FadeUp } from "./FadeUp";
+
+const { width } = Dimensions.get("window");
 
 interface Props {
   visible: boolean;
@@ -37,87 +44,112 @@ export function OnboardingModal({ visible, onComplete }: Props) {
   const copyKey = async () => {
     if (secretKey) {
       await Clipboard.setStringAsync(secretKey);
-      if (Platform.OS === "web") {
-        window.alert("Secret key copied to clipboard!");
-      } else {
-        const { Alert } = require("react-native");
-        Alert.alert("Copied", "Secret key copied to clipboard!");
-      }
+      const { Alert } = require("react-native");
+      Alert.alert("Copied", "Secret key copied to clipboard!");
     }
   };
 
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       transparent={true}
       onRequestClose={onComplete}
     >
       <View style={styles.overlay}>
-        <View style={styles.card}>
-          {/* Step 1 */}
-          {step === 1 && (
-            <View style={styles.stepContent}>
-              <Text style={styles.title}>SnapProof gives your photo a receipt.</Text>
-              <Text style={styles.paragraph}>
-                We anchor the exact digital fingerprint (hash) of your photo to the Sui blockchain the moment you take it.
-              </Text>
-              <Text style={styles.paragraph}>
-                This guarantees cryptographic integrity: anyone can prove that these exact bytes existed at this exact time.
-              </Text>
-            </View>
-          )}
+        <View style={styles.container}>
+          <GlassCard radius={32} tone="cyan">
+            <View style={styles.card}>
+              <View style={styles.stepHeader}>
+                <View style={styles.iconCircle}>
+                  {step === 1 && <Feather name="shield" size={28} color={C.mint} />}
+                  {step === 2 && <Feather name="check-circle" size={28} color={C.cyan} />}
+                  {step === 3 && <Feather name="key" size={28} color={C.coral} />}
+                </View>
+                <View style={styles.stepBadge}>
+                  <Text style={styles.stepBadgeText}>STEP 0{step}</Text>
+                </View>
+              </View>
 
-          {/* Step 2 */}
-          {step === 2 && (
-            <View style={styles.stepContent}>
-              <Text style={styles.title}>What it proves (and doesn't)</Text>
-              <View style={styles.list}>
-                <Text style={styles.listItem}>
-                  <Text style={styles.check}>✓ PROVES:</Text> The exact bytes of the image file have not been altered since the moment of capture.
-                </Text>
-                <Text style={styles.listItem}>
-                  <Text style={styles.check}>✓ PROVES:</Text> The photo existed prior to the timestamp of the blockchain transaction.
-                </Text>
-                <Text style={styles.listItem}>
-                  <Text style={styles.cross}>✗ DOES NOT PROVE:</Text> That the photo is "real" or free of AI generation. If your camera captures an AI-generated screen, SnapProof only proves you captured *that screen* at that time.
-                </Text>
+              <View style={styles.stepContent}>
+                {/* Step 1 */}
+                {step === 1 && (
+                  <View>
+                    <Text style={styles.title}>Your photo gets a digital receipt.</Text>
+                    <Text style={styles.paragraph}>
+                      SnapProof anchors the exact digital fingerprint of your photo to the Sui blockchain the moment you take it.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                      This guarantees that these exact pixels existed at this exact time, proven by math.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Step 2 */}
+                {step === 2 && (
+                  <View>
+                    <Text style={styles.title}>What it proves</Text>
+                    <View style={styles.list}>
+                      <View style={styles.listItem}>
+                        <Ionicons name="checkmark-circle" size={18} color={C.mint} />
+                        <Text style={styles.listText}>Image hasn't been altered since capture</Text>
+                      </View>
+                      <View style={styles.listItem}>
+                        <Ionicons name="checkmark-circle" size={18} color={C.mint} />
+                        <Text style={styles.listText}>The photo existed at the timestamp</Text>
+                      </View>
+                      <View style={[styles.listItem, { opacity: 0.6 }]}>
+                        <Ionicons name="alert-circle" size={18} color={C.slate} />
+                        <Text style={styles.listText}>Doesn't prove if AI was used off-screen</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+
+                {/* Step 3 */}
+                {step === 3 && (
+                  <View>
+                    <Text style={styles.title}>Your keys, your proofs.</Text>
+                    <Text style={styles.paragraph}>
+                      SnapProof uses a local wallet to sign your proofs. There are no passwords and no central servers.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                      If you delete the app without saving your key, you lose your digital identity.
+                    </Text>
+                    <TouchableOpacity style={styles.copyBox} onPress={copyKey} activeOpacity={0.7}>
+                      <View style={styles.copyHeader}>
+                        <Text style={styles.copyLabel}>SECRET RECOVERY KEY</Text>
+                        <Feather name="copy" size={14} color={C.cyan} />
+                      </View>
+                      <Text style={styles.keyText} numberOfLines={1}>
+                        {secretKey || "Generating your secure key..."}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* Footer */}
+              <View style={styles.footer}>
+                <View style={styles.dots}>
+                  {[1, 2, 3].map((i) => (
+                    <View
+                      key={i}
+                      style={[styles.dot, step === i && styles.activeDot]}
+                    />
+                  ))}
+                </View>
+                <CoralButton onPress={handleNext} style={styles.nextBtn}>
+                  <View style={styles.btnInner}>
+                    <Text style={styles.nextText}>
+                      {step === 3 ? "Launch App" : "Next Step"}
+                    </Text>
+                    <Feather name="arrow-right" size={18} color="#fff" />
+                  </View>
+                </CoralButton>
               </View>
             </View>
-          )}
-
-          {/* Step 3 */}
-          {step === 3 && (
-            <View style={styles.stepContent}>
-              <Text style={styles.title}>Your wallet is on this device.</Text>
-              <Text style={styles.paragraph}>
-                SnapProof uses a local cryptographic wallet to sign your proofs. There are no passwords and no centralized servers holding your keys.
-              </Text>
-              <Text style={styles.paragraph}>
-                If you lose this device or delete the app, you will lose the ability to prove you were the original creator.
-              </Text>
-              <TouchableOpacity style={styles.copyButton} onPress={copyKey}>
-                <Text style={styles.copyButtonText}>Copy Secret Key to Password Manager</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Pagination and Actions */}
-          <View style={styles.footer}>
-            <View style={styles.dots}>
-              {[1, 2, 3].map((i) => (
-                <View
-                  key={i}
-                  style={[styles.dot, step === i && styles.activeDot]}
-                />
-              ))}
-            </View>
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextButtonText}>
-                {step === 3 ? "Get Started" : "Next"}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          </GlassCard>
         </View>
       </View>
     </Modal>
@@ -127,65 +159,108 @@ export function OnboardingModal({ visible, onComplete }: Props) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backgroundColor: "rgba(3, 5, 12, 0.92)",
     justifyContent: "center",
-    padding: 20,
+    alignItems: "center",
+  },
+  container: {
+    width: width - 40,
+    maxWidth: 400,
   },
   card: {
-    backgroundColor: "#16213e",
-    borderRadius: 20,
     padding: 24,
+  },
+  stepHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  iconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#0f3460",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  stepBadge: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  stepBadgeText: {
+    color: C.silver,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
   },
   stepContent: {
-    minHeight: 250,
+    minHeight: 280,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
+    fontSize: 28,
+    fontWeight: "800",
+    color: C.textPrimary,
     marginBottom: 16,
-    lineHeight: 32,
+    lineHeight: 34,
+    letterSpacing: -0.5,
   },
   paragraph: {
     fontSize: 16,
-    color: "#ccc",
+    color: C.silver,
     marginBottom: 16,
     lineHeight: 24,
   },
   list: {
     gap: 16,
-  },
-  listItem: {
-    fontSize: 15,
-    color: "#ccc",
-    lineHeight: 22,
-  },
-  check: {
-    color: "#4ecca3",
-    fontWeight: "bold",
-  },
-  cross: {
-    color: "#ff6b6b",
-    fontWeight: "bold",
-  },
-  copyButton: {
-    backgroundColor: "#0f3460",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
     marginTop: 8,
   },
-  copyButtonText: {
-    color: "#5dade2",
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
+  },
+  listText: {
+    color: C.textPrimary,
+    fontSize: 15,
     fontWeight: "600",
-    fontSize: 14,
+    flex: 1,
+  },
+  copyBox: {
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(60,200,240,0.15)",
+    marginTop: 8,
+  },
+  copyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  copyLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: C.cyan,
+    letterSpacing: 1,
+  },
+  keyText: {
+    color: C.silver,
+    fontSize: 13,
+    fontFamily: "monospace",
   },
   footer: {
     flexDirection: "row",
@@ -201,21 +276,23 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#333",
+    backgroundColor: "rgba(255,255,255,0.1)",
   },
   activeDot: {
-    backgroundColor: "#e94560",
+    backgroundColor: C.coral,
     width: 24,
   },
-  nextButton: {
-    backgroundColor: "#e94560",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
+  nextBtn: {
+    paddingHorizontal: 20,
   },
-  nextButtonText: {
+  btnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  nextText: {
     color: "#fff",
-    fontWeight: "bold",
+    fontWeight: "800",
     fontSize: 16,
   },
 });

@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import NetInfo from "@react-native-community/netinfo";
 import { initAnalytics, track } from "../src/services/analytics";
 import { processQueue } from "../src/services/outbox";
+import { activateKeepAwakeAsync } from "expo-keep-awake";
 
 export default function RootLayout() {
   useEffect(() => {
@@ -19,6 +20,9 @@ export default function RootLayout() {
         processQueue().catch(() => {});
       }
     });
+
+    // Suppress "Unable to activate keep awake" warning by catching it
+    activateKeepAwakeAsync().catch(() => {});
 
     return () => unsubscribe();
   }, []);

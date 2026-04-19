@@ -1,570 +1,538 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
-  FlatList,
-  Linking,
   Platform,
-  type ViewToken,
+  ScrollView,
+  Animated,
 } from "react-native";
-import MapView, { Marker, Callout } from "react-native-maps";
-import { PROOF_PACKAGE_ID, SUI_NETWORK, WEB_VERIFIER_URL } from "../src/config";
-import { SuiClient, getFullnodeUrl } from "@mysten/sui/client";
+import { Stack, Link } from "expo-router";
+import { useFocusEffect } from "expo-router";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { GlassCard, GlowBackground } from "../src/components/Glass";
+import { C, TYPE } from "../src/theme/tokens";
+import { WorldMap, type Proof } from "../src/components/WorldMap";
+import { FadeUp } from "../src/components/FadeUp";
+import { getProofs } from "../src/services/sui";
 import { decodeGeohash } from "../src/utils/geohash";
-import {
-  getProofDetailsCached,
-  prefetchProofDetails,
-} from "../src/services/proofDetails";
 import { track } from "../src/services/analytics";
 
-interface ProofPin {
-  proofId: string;
-  txDigest: string;
-  imageHash: string;
-  geohash: string;
-  lat: number;
-  lng: number;
-  createdAt: number;
-  creator: string;
-  /** Fetched lazily via proofDetails.getProofDetailsCached. */
-  imageUrl?: string | null;
-  /** Track fetch state so we can render a spinner. */
-  imageState?: "idle" | "loading" | "ready" | "error";
-}
-
-const explorerBase =
-  SUI_NETWORK === "mainnet"
-    ? "https://suiscan.xyz/mainnet"
-    : `https://suiscan.xyz/${SUI_NETWORK}`;
+const FILTERS = ["All", "Verified", "Mine", "24h"] as const;
 
 export default function MapScreen() {
-  const [proofs, setProofs] = useState<ProofPin[]>([]);
+  const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [proofs, setProofs] = useState<Proof[]>([]);
+  const [selected, setSelected] = useState<Proof | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState("");
-  const [viewMode, setViewMode] = useState<"map" | "list">("map");
-  const [cursor, setCursor] = useState<any>(null);
-  const cursorRef = useRef<any>(null);
-  const [hasNextPage, setHasNextPage] = useState(false);
 
-  const [region, setRegion] = useState({
-    latitude: 10.762622,
-    longitude: 106.660172,
-    latitudeDelta: 0.0922,
-    longitudeDelta: 0.0421,
-  });
-
-  // --- data ------------------------------------------------------------
-
-  const fetchGeoProofs = useCallback(async (loadMore = false) => {
+  const fetchGeoProofs = async () => {
     try {
-      if (loadMore) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-        setCursor(null);
-      }
-      setError("");
+      setLoading(true);
+      const all = await getProofs();
+      const mapped: Proof[] = all
+        .filter((p) => p.coarseGeoHash)
+        .map((p) => {
+          const decoded = decodeGeohash(p.coarseGeoHash!);
+          const latitude = decoded.lat;
+          const longitude = decoded.lng;
+          
+          if (isNaN(latitude) || isNaN(longitude)) return null;
 
-      const client = new SuiClient({ url: getFullnodeUrl(SUI_NETWORK) });
-
-      const response = await client.queryEvents({
-        query: {
-          MoveEventType: `${PROOF_PACKAGE_ID}::snapproof::ProofCreated`,
-        },
-        limit: 50,
-        order: "descending",
-        cursor: loadMore ? cursorRef.current : null,
-      });
-
-      const pins: ProofPin[] = [];
-      for (const event of response.data) {
-        const parsed = event.parsedJson as Record<string, unknown>;
-        const geohash = String(parsed.coarse_geo_hash ?? "");
-        if (!geohash) continue;
-
-        const decoded = decodeGeohash(geohash);
-        pins.push({
-          proofId: String(parsed.proof_id ?? ""),
-          txDigest: event.id.txDigest,
-          imageHash: String(parsed.image_hash ?? ""),
-          geohash,
-          lat: decoded.lat,
-          lng: decoded.lng,
-          createdAt: Number(parsed.created_at ?? event.timestampMs ?? 0),
-          creator: String(parsed.creator ?? ""),
-          imageState: "idle",
-        });
-      }
-
-      if (loadMore) {
-        setProofs((prev) => [...prev, ...pins]);
-      } else {
-        setProofs(pins);
-        if (pins.length > 0) {
-          setRegion((prev) => ({
-            ...prev,
-            latitude: pins[0].lat,
-            longitude: pins[0].lng,
-          }));
-        }
-      }
-
-      setCursor(response.nextCursor);
-      cursorRef.current = response.nextCursor;
-      setHasNextPage(response.hasNextPage);
-
-      // Prefetch the first handful of thumbnails so map markers and the
-      // top of the list render with images without waiting on a tap.
-      const firstN = pins.slice(0, 8).map((p) => p.proofId).filter(Boolean);
-      if (firstN.length > 0) {
-        prefetchProofDetails(firstN, 6).then((hydrated) => {
-          setProofs((prev) =>
-            prev.map((p) => {
-              const d = hydrated[p.proofId];
-              if (!d) return p;
-              return {
-                ...p,
-                imageUrl: d.imageUrl,
-                imageState: d.imageUrl ? "ready" : "error",
-              };
-            })
-          );
-        });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+          return {
+            id: p.proofHash.slice(0, 10),
+            latitude,
+            longitude,
+            location: p.coarseGeoHash || "Unknown",
+            time: p.createdAt ? new Date(p.createdAt).toLocaleTimeString() : "Unknown",
+            verified: true,
+            hot: Date.now() - (p.createdAt || 0) < 3600000,
+          };
+        })
+        .filter((p): p is Proof => p !== null);
+      setProofs(mapped);
+      if (mapped.length > 0) setSelected(mapped[0]);
+    } catch (error) {
+      console.warn("Map fetch error:", error);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
-  }, []);
-
-  useEffect(() => {
-    fetchGeoProofs();
-  }, [fetchGeoProofs]);
-
-  // Fetch a single pin's image details lazily. Safe to call repeatedly.
-  const hydratePin = useCallback(async (proofId: string) => {
-    if (!proofId) return;
-    setProofs((prev) =>
-      prev.map((p) =>
-        p.proofId === proofId && p.imageState === "idle"
-          ? { ...p, imageState: "loading" }
-          : p
-      )
-    );
-    const details = await getProofDetailsCached(proofId);
-    setProofs((prev) =>
-      prev.map((p) =>
-        p.proofId === proofId
-          ? {
-              ...p,
-              imageUrl: details?.imageUrl ?? null,
-              imageState: details?.imageUrl ? "ready" : "error",
-            }
-          : p
-      )
-    );
-  }, []);
-
-  // --- actions ---------------------------------------------------------
-
-  const openInMaps = (lat: number, lng: number) => {
-    const url =
-      Platform.OS === "ios"
-        ? `maps:0,0?q=${lat},${lng}`
-        : `geo:${lat},${lng}?q=${lat},${lng}`;
-    Linking.openURL(url).catch(() => {
-      Linking.openURL(
-        `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
-      ).catch(() => {});
-    });
   };
 
-  const openExplorer = (txDigest: string) => {
-    Linking.openURL(`${explorerBase}/tx/${txDigest}`).catch(() => {});
-  };
-
-  const openVerifier = (proofId: string) => {
-    if (!proofId) return;
-    track({ name: "map_proof_opened", props: { proofId } });
-    Linking.openURL(`${WEB_VERIFIER_URL}/p/${proofId}`).catch(() => {});
-  };
-
-  // Kick off a lazy fetch when list items enter the viewport.
-  const onViewableItemsChanged = useRef(
-    (info: { viewableItems: ViewToken[] }) => {
-      const ids = info.viewableItems
-        .map((v) => (v.item as ProofPin)?.proofId)
-        .filter(Boolean) as string[];
-      if (ids.length > 0) prefetchProofDetails(ids, 4);
-    }
-  ).current;
-
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 30 }).current;
-
-  // --- render helpers --------------------------------------------------
-
-  const Thumbnail = ({
-    pin,
-    size,
-    borderRadius,
-  }: {
-    pin: ProofPin;
-    size: number;
-    borderRadius: number;
-  }) => {
-    const dims = { width: size, height: size, borderRadius };
-
-    if (pin.imageState === "loading") {
-      return (
-        <View style={[styles.thumbPlaceholder, dims]}>
-          <ActivityIndicator size="small" color="#5dade2" />
-        </View>
-      );
-    }
-    if (pin.imageUrl && pin.imageState === "ready") {
-      return (
-        <Image
-          source={{ uri: pin.imageUrl }}
-          style={[styles.thumbImage, dims]}
-          onError={() => {
-            setProofs((prev) =>
-              prev.map((p) =>
-                p.proofId === pin.proofId ? { ...p, imageState: "error" } : p
-              )
-            );
-          }}
-        />
-      );
-    }
-    // idle or error — show a short hash fingerprint
-    const fp = pin.imageHash ? pin.imageHash.slice(0, 4).toUpperCase() : "•••";
-    return (
-      <View style={[styles.thumbPlaceholder, dims]}>
-        <Text style={styles.thumbFallback}>{fp}</Text>
-      </View>
-    );
-  };
-
-  const renderProofItem = ({ item }: { item: ProofPin }) => {
-    const date = item.createdAt
-      ? new Date(item.createdAt).toLocaleString()
-      : "Unknown";
-    const shortHash = item.imageHash ? `${item.imageHash.slice(0, 12)}...` : "";
-
-    return (
-      <View style={styles.proofCard}>
-        <View style={styles.cardHeader}>
-          <Thumbnail pin={item} size={64} borderRadius={10} />
-          <View style={styles.cardHeaderText}>
-            <Text style={styles.geohashText}>{item.geohash}</Text>
-            <Text style={styles.coordsText}>
-              {item.lat.toFixed(4)}, {item.lng.toFixed(4)}
-            </Text>
-            <Text style={styles.cardDate}>{date}</Text>
-          </View>
-        </View>
-        <View style={styles.cardBody}>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardLabel}>Hash</Text>
-            <Text style={styles.cardValue}>{shortHash}</Text>
-          </View>
-        </View>
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => openInMaps(item.lat, item.lng)}
-          >
-            <Text style={styles.actionText}>Maps</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.explorerButton]}
-            onPress={() => openExplorer(item.txDigest)}
-          >
-            <Text style={styles.actionText}>Explorer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.verifierButton]}
-            onPress={() => openVerifier(item.proofId)}
-          >
-            <Text style={styles.actionText}>Verify</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
-
-  const renderFooter = () => {
-    if (!hasNextPage) return null;
-    return (
-      <TouchableOpacity
-        style={styles.loadMoreButton}
-        onPress={() => fetchGeoProofs(true)}
-        disabled={loadingMore}
-      >
-        {loadingMore ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.loadMoreText}>Load More</Text>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  // --- screen ---------------------------------------------------------
+  useFocusEffect(
+    useCallback(() => {
+      track({ name: "map_viewed" });
+      fetchGeoProofs();
+    }, [])
+  );
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.statContainer}>
-          <Text style={styles.statCount}>{proofs.length}</Text>
-          <Text style={styles.statLabel}>Proofs</Text>
-        </View>
-        <View style={styles.toggleContainer}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === "map" && styles.toggleActive]}
-            onPress={() => setViewMode("map")}
-          >
-            <Text
-              style={[
-                styles.toggleText,
-                viewMode === "map" && styles.toggleTextActive,
-              ]}
-            >
-              Map
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, viewMode === "list" && styles.toggleActive]}
-            onPress={() => setViewMode("list")}
-          >
-            <Text
-              style={[
-                styles.toggleText,
-                viewMode === "list" && styles.toggleTextActive,
-              ]}
-            >
-              List
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchGeoProofs()}>
-          <Text style={styles.refreshText}>↻</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Content */}
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#e94560" />
-        </View>
-      ) : error ? (
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : viewMode === "map" ? (
-        <View style={styles.mapContainer}>
-          {Platform.OS === "web" ? (
-            <View style={styles.center}>
-              <Text style={styles.webText}>
-                Map View is for Mobile. Use List on Web.
-              </Text>
+    <GlowBackground
+      topColor="rgba(60,200,240,0.28)"
+      bottomColor="rgba(240,86,110,0.22)"
+    >
+      <Stack.Screen
+        options={{
+          headerTransparent: true,
+          headerTitle: "",
+          headerLeft: () => (
+            <Link href="/" asChild>
+              <TouchableOpacity style={styles.backBtn}>
+                <Feather name="arrow-left" size={20} color={C.silver} />
+              </TouchableOpacity>
+            </Link>
+          ),
+          headerRight: () => (
+            <View style={styles.statusChip}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>Live</Text>
             </View>
-          ) : (
-            <MapView
-              style={styles.map}
-              region={region}
-              onRegionChangeComplete={setRegion}
-              theme="dark"
-            >
-              {proofs.map((p) => (
-                <Marker
-                  key={p.txDigest}
-                  coordinate={{ latitude: p.lat, longitude: p.lng }}
-                  onPress={() => {
-                    if (p.imageState === "idle") hydratePin(p.proofId);
-                  }}
-                >
-                  {/* Custom marker avatar: Walrus thumbnail with colored ring. */}
-                  <View style={styles.markerRing}>
-                    <Thumbnail pin={p} size={40} borderRadius={20} />
-                  </View>
+          ),
+        }}
+      />
 
-                  <Callout
-                    tooltip
-                    onPress={() => openVerifier(p.proofId)}
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 1. Hero Stats */}
+        <FadeUp delay={60}>
+          <View style={styles.hero}>
+            <View style={styles.heroEyebrow}>
+              <Feather name="globe" size={14} color={C.cyan} style={{ marginRight: 6 }} />
+              <Text style={styles.eyebrow}>Live network</Text>
+            </View>
+            <Text style={styles.heroTitle}>
+              <Text style={{ color: C.coral }}>{proofs.length}</Text> proofs sealed{"\n"}
+              <Text style={{ color: C.silver }}>across the globe.</Text>
+            </Text>
+          </View>
+        </FadeUp>
+
+        {/* 2. Map View */}
+        <FadeUp delay={120}>
+          <GlassCard tone="cyan" style={styles.mapCard} radius={24} noPad>
+            <View style={styles.mapInner}>
+              <WorldMap
+                proofs={proofs}
+                selectedId={selected?.id}
+                onSelect={setSelected}
+              />
+              <View style={styles.legend}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: C.mint }]} />
+                  <Text style={styles.legendText}>Verified</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: C.coral }]} />
+                  <Text style={styles.legendText}>Recent</Text>
+                </View>
+                <Text style={styles.epochText}>EPOCH 412</Text>
+              </View>
+            </View>
+          </GlassCard>
+        </FadeUp>
+
+        {/* 3. Filter Chips */}
+        <FadeUp delay={180}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {FILTERS.map((f) => (
+              <TouchableOpacity
+                key={f}
+                onPress={() => setActiveFilter(f)}
+                style={[
+                  styles.filterBtn,
+                  activeFilter === f && styles.filterBtnActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.filterBtnText,
+                    activeFilter === f && styles.filterBtnTextActive,
+                  ]}
+                >
+                  {f}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </FadeUp>
+
+        {/* 4. Recent Proofs List */}
+        <FadeUp delay={220}>
+          <View style={styles.listHeader}>
+            <Text style={styles.eyebrow}>Recent proofs</Text>
+            <Text style={styles.listCount}>{proofs.length} shown</Text>
+          </View>
+          <GlassCard radius={24} noPad>
+            <View style={styles.listInner}>
+              {proofs.slice(0, 5).map((p, i) => (
+                <TouchableOpacity
+                  key={p.id}
+                  onPress={() => setSelected(p)}
+                  style={[
+                    styles.listItem,
+                    selected?.id === p.id && styles.listItemActive,
+                    i === 0 && { borderTopWidth: 0 },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.itemIconWrap,
+                      { backgroundColor: p.verified ? "rgba(64,224,163,0.1)" : "rgba(240,86,110,0.1)" },
+                    ]}
                   >
-                    <View style={styles.callout}>
-                      <View style={styles.calloutImageWrap}>
-                        <Thumbnail pin={p} size={160} borderRadius={8} />
-                      </View>
-                      <Text style={styles.calloutTitle}>SnapProof</Text>
-                      <Text style={styles.calloutHash}>
-                        {p.imageHash.slice(0, 16)}...
+                    <Feather name="map-pin" size={18} color={p.verified ? C.mint : C.coral} />
+                    {p.hot && <View style={styles.hotIndicator} />}
+                  </View>
+                  <View style={styles.itemInfo}>
+                    <View style={styles.itemTitleRow}>
+                      <Text style={styles.itemLocation} numberOfLines={1}>
+                        {p.location}
                       </Text>
-                      <Text style={styles.calloutLink}>Open Verifier →</Text>
+                      <Text style={styles.itemId}>{p.id}</Text>
                     </View>
-                  </Callout>
-                </Marker>
+                    <View style={styles.itemMetaRow}>
+                      <Feather name="clock" size={10} color={C.slate} />
+                      <Text style={styles.itemMetaText}>{p.time}</Text>
+                      <Text style={styles.metaDot}>·</Text>
+                      <Text
+                        style={[
+                          styles.itemStatus,
+                          { color: p.verified ? C.mint : C.coral },
+                        ]}
+                      >
+                        {p.verified ? "Verified" : "Pending"}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
               ))}
-            </MapView>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={proofs}
-          renderItem={renderProofItem}
-          keyExtractor={(p) => p.txDigest}
-          ListFooterComponent={renderFooter}
-          contentContainerStyle={styles.list}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-        />
-      )}
-    </View>
+            </View>
+          </GlassCard>
+        </FadeUp>
+
+        {/* 5. Selected Detail */}
+        {selected && (
+          <FadeUp delay={260} style={{ marginTop: 20 }}>
+            <GlassCard tone="cyan" radius={24}>
+              <View style={styles.detailInner}>
+                <View style={styles.detailHeader}>
+                  <Text style={styles.eyebrow}>Selected</Text>
+                  <View style={styles.detailBadge}>
+                    <View style={[styles.statusDot, { backgroundColor: C.mint }]} />
+                    <Text style={styles.detailBadgeText}>Sealed</Text>
+                  </View>
+                </View>
+                <View style={styles.detailMain}>
+                  <Text style={styles.detailLocation} numberOfLines={1}>
+                    {selected.location}
+                  </Text>
+                  <Text style={styles.detailId}>{selected.id}</Text>
+                </View>
+                <Text style={styles.detailSub}>
+                  Captured {selected.time} · Sui Mainnet
+                </Text>
+                <TouchableOpacity style={styles.explorerBtn}>
+                  <Text style={styles.explorerBtnText}>View on explorer ↗</Text>
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
+          </FadeUp>
+        )}
+
+        <Text style={styles.builtOn}>Built on Sui</Text>
+      </ScrollView>
+    </GlowBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#1a1a2e" },
-  header: {
+  container: {
+    flex: 1,
+  },
+  content: {
+    paddingTop: Platform.OS === "ios" ? 110 : 90,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(20,28,52,0.65)",
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 16,
+  },
+  backIcon: {
+    color: C.silver,
+    fontSize: 20,
+  },
+  statusChip: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    backgroundColor: "#16213e",
-    borderBottomWidth: 1,
-    borderBottomColor: "#0f3460",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+    backgroundColor: "rgba(20,28,52,0.65)",
+    marginRight: 16,
   },
-  statContainer: { marginRight: 16 },
-  statCount: { color: "#4ecca3", fontSize: 18, fontWeight: "bold" },
-  statLabel: { color: "#888", fontSize: 10, textTransform: "uppercase" },
-  toggleContainer: {
-    flex: 1,
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.mint,
+  },
+  statusText: {
+    color: C.silver,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  hero: {
+    marginBottom: 24,
+  },
+  heroEyebrow: {
     flexDirection: "row",
-    backgroundColor: "#0f3460",
-    borderRadius: 8,
-    padding: 2,
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
   },
-  toggleBtn: { flex: 1, paddingVertical: 6, alignItems: "center", borderRadius: 6 },
-  toggleActive: { backgroundColor: "#1a1a2e" },
-  toggleText: { color: "#888", fontSize: 12, fontWeight: "bold" },
-  toggleTextActive: { color: "#fff" },
-  refreshBtn: { marginLeft: 12, padding: 8 },
-  refreshText: { color: "#5dade2", fontSize: 20 },
-
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  errorText: { color: "#ff6b6b", textAlign: "center" },
-  webText: { color: "#888", textAlign: "center" },
-
-  mapContainer: { flex: 1 },
-  map: { width: "100%", height: "100%" },
-
-  // List card
-  list: { padding: 12 },
-  proofCard: {
-    backgroundColor: "#16213e",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  cardHeaderText: { flex: 1, marginLeft: 12 },
-  geohashText: {
-    color: "#4ecca3",
+  eyebrowIcon: {
     fontSize: 14,
-    fontWeight: "bold",
-    fontFamily: "monospace",
   },
-  coordsText: { color: "#888", fontSize: 10 },
-  cardDate: { color: "#ccc", fontSize: 11, marginTop: 4 },
-  cardBody: {
-    borderTopWidth: 1,
-    borderTopColor: "#333",
-    paddingTop: 8,
-    marginBottom: 10,
+  eyebrow: {
+    ...TYPE.eyebrow,
   },
-  cardRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-  cardLabel: { color: "#888", fontSize: 11 },
-  cardValue: { color: "#ccc", fontSize: 11, fontFamily: "monospace" },
-  cardActions: { flexDirection: "row", gap: 8 },
-  actionButton: {
-    flex: 1,
-    backgroundColor: "#0f3460",
-    paddingVertical: 8,
-    borderRadius: 6,
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: "800",
+    letterSpacing: -1,
+    color: C.textPrimary,
+    lineHeight: 38,
+  },
+  mapCard: {
+    marginBottom: 24,
+  },
+  mapInner: {
+    padding: 12,
+  },
+  legend: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingHorizontal: 4,
   },
-  explorerButton: {
-    backgroundColor: "#1a1a2e",
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-  verifierButton: {
-    backgroundColor: "#e94560",
-  },
-  actionText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-  loadMoreButton: { padding: 16, alignItems: "center" },
-  loadMoreText: { color: "#5dade2", fontWeight: "bold" },
-
-  // Marker
-  markerRing: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "#e94560",
-    padding: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-    elevation: 4,
+  legendItem: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 6,
+    marginRight: 12,
   },
-
-  // Thumbnail fallback states
-  thumbImage: { backgroundColor: "#0a0a12" },
-  thumbPlaceholder: {
-    backgroundColor: "#0f3460",
-    alignItems: "center",
-    justifyContent: "center",
+  legendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  thumbFallback: {
-    color: "#5dade2",
-    fontFamily: "monospace",
-    fontSize: 11,
-    fontWeight: "700",
+  legendText: {
+    fontSize: 10,
+    color: C.slate,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
-
-  // Callout — `tooltip` mode means we own the whole bubble.
-  callout: {
-    backgroundColor: "#16213e",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#0f3460",
-    padding: 10,
-    minWidth: 180,
-    maxWidth: 220,
-  },
-  calloutImageWrap: { marginBottom: 8, alignItems: "center" },
-  calloutTitle: {
-    fontWeight: "700",
-    fontSize: 13,
-    marginBottom: 2,
-    color: "#fff",
-  },
-  calloutHash: {
+  epochText: {
     fontSize: 10,
     fontFamily: "monospace",
-    color: "#888",
-    marginBottom: 6,
+    color: C.slate,
   },
-  calloutLink: { fontSize: 12, color: "#5dade2", fontWeight: "700" },
+  filterRow: {
+    paddingBottom: 20,
+    gap: 8,
+  },
+  filterBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  filterBtnActive: {
+    backgroundColor: C.textPrimary,
+    borderColor: C.textPrimary,
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: C.slate,
+  },
+  filterBtnTextActive: {
+    color: "#050813",
+  },
+  listHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  listCount: {
+    fontSize: 10,
+    fontFamily: "monospace",
+    color: C.slate,
+  },
+  listInner: {
+    overflow: "hidden",
+  },
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.05)",
+  },
+  listItemActive: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  itemIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  hotIndicator: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.coral,
+    borderWidth: 1,
+    borderColor: "#050813",
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  itemLocation: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.textPrimary,
+    flex: 1,
+  },
+  itemId: {
+    fontSize: 11,
+    fontFamily: "monospace",
+    color: C.slate,
+    marginLeft: 8,
+  },
+  itemMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  itemMetaText: {
+    fontSize: 11,
+    color: C.slate,
+  },
+  metaDot: {
+    color: C.slate,
+    fontSize: 11,
+  },
+  itemStatus: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  detailInner: {
+    padding: 20,
+  },
+  detailHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  detailBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 100,
+    backgroundColor: "rgba(64,224,163,0.12)",
+  },
+  detailBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.mint,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  detailMain: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    marginBottom: 4,
+  },
+  detailLocation: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: C.textPrimary,
+    flex: 1,
+  },
+  detailId: {
+    fontSize: 12,
+    fontFamily: "monospace",
+    color: C.silver,
+    marginLeft: 12,
+  },
+  detailSub: {
+    fontSize: 12,
+    color: C.slate,
+    marginBottom: 16,
+  },
+  explorerBtn: {
+    width: "100%",
+    paddingVertical: 12,
+    borderRadius: 100,
+    backgroundColor: "rgba(60,200,240,0.08)",
+    borderWidth: 1,
+    borderColor: C.cyanBorder,
+    alignItems: "center",
+  },
+  explorerBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: C.cyan,
+  },
+  builtOn: {
+    marginTop: 40,
+    textAlign: "center",
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 3,
+    color: "rgba(132,142,160,0.4)",
+  },
 });

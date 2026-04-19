@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,693 +8,379 @@ import {
   ActivityIndicator,
   Platform,
   ScrollView,
+  Animated,
+  Linking,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
+import { GlowBackground, GlassCard, CoralButton, CyanButton } from "../src/components/Glass";
+import { C, TYPE } from "../src/theme/tokens";
+import { SnapLogo } from "../src/components/SnapLogo";
+import { FadeUp } from "../src/components/FadeUp";
+import { ProcessState } from "../src/components/ProcessState";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import * as SecureStore from "expo-secure-store";
-import { useFocusEffect } from "expo-router";
 import { OnboardingModal } from "../src/components/OnboardingModal";
-import { enqueueProof, getOutboxQueue } from "../src/services/outbox";
-import {
-  hashImage,
-  extractMetadata,
-  hashMetadata,
-  computeProofHash,
-} from "../src/utils/hash";
-import { encodeGeohash } from "../src/utils/geohash";
-import { uploadToWalrus } from "../src/services/walrus";
-import { createProofOnSui, getBalance } from "../src/services/sui";
-import { getAddress, requestTestnetTokens } from "../src/services/wallet";
-import { logger } from "../src/utils/logger";
-import { track, captureException, setUser } from "../src/services/analytics";
-import { loadSettings, saveSettings, type AppSettings } from "../src/services/settings";
-import type { ProofData } from "../src/types/proof";
+import { getAddress } from "../src/services/wallet";
+import { getBalance, faucet, mintProof } from "../src/services/sui";
+import { hashImage } from "../src/utils/hash";
+import { track } from "../src/services/analytics";
+import { SUI_NETWORK } from "../src/config";
 
-/** Cross-platform alert that works on web too */
-function showAlert(title: string, message: string) {
-  if (Platform.OS === "web") {
-    window.alert(`${title}\n\n${message}`);
-  } else {
-    const { Alert } = require("react-native");
-    Alert.alert(title, message);
-  }
-}
+const SEAL_STEPS = [
+  { label: "Hashing image", detail: "SHA-256" },
+  { label: "Signing payload", detail: "ed25519" },
+  { label: "Sealing on Sui", detail: "epoch 412" },
+];
 
 export default function CaptureScreen() {
   const router = useRouter();
+  const [phase, setPhase] = useState<"viewfinder" | "sealing" | "sealed">("viewfinder");
+  const [step, setStep] = useState(0);
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
   const [walletAddress, setWalletAddress] = useState("");
   const [balance, setBalance] = useState<string>("");
-  const [exif, setExif] = useState<Record<string, any> | null>(null);
-  const [locationStatus, setLocationStatus] = useState<
-    "pending" | "granted" | "denied"
-  >("pending");
-  const [currentLocation, setCurrentLocation] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [liveHash, setLiveHash] = useState<string>("");
-  const [timeWarning, setTimeWarning] = useState<string>("");
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [outboxCount, setOutboxCount] = useState(0);
-  const [settings, setSettings] = useState<AppSettings>({
-    cameraOnlyMode: false,
-    hasSeenOnboarding: false,
-  });
-
-  // Refresh outbox count and wallet balance every time screen is focused
-  useFocusEffect(() => {
-    getOutboxQueue().then((q) => {
-      setOutboxCount(q.filter(i => i.status !== "uploading").length);
-    });
-    initWallet(); // Refresh SUI balance
-  });
+  const [loading, setLoading] = useState(false);
+  const [proofHash, setProofHash] = useState("");
+  const [txDigest, setTxDigest] = useState("");
 
   useEffect(() => {
-    checkOnboarding();
-    initWallet();
-    requestLocationPermission();
-    checkTimeDrift();
-    loadSettings().then(setSettings);
+    init();
   }, []);
 
-  const checkTimeDrift = async () => {
-    try {
-      const response = await fetch("https://worldtimeapi.org/api/ip");
-      const data = await response.json();
-      const networkTime = new Date(data.utc_datetime).getTime();
-      const localTime = Date.now();
-      if (Math.abs(networkTime - localTime) > 120_000) { // 2 minutes
-        setTimeWarning("⚠️ Device clock is inaccurate. Proof timestamp may be contested.");
-      }
-    } catch (e) {
-      console.warn("Could not check network time", e);
-    }
+  const init = async () => {
+    const addr = await getAddress();
+    setWalletAddress(addr);
+    const bal = await getBalance();
+    setBalance((Number(bal) / 1_000_000_000).toFixed(3));
   };
 
-  const checkOnboarding = async () => {
-    try {
-      const completed = await SecureStore.getItemAsync("onboarding_completed");
-      if (!completed) {
-        setShowOnboarding(true);
-      }
-    } catch (e) {
-      console.warn("SecureStore error", e);
-    }
-  };
-
-  const completeOnboarding = async () => {
-    try {
-      await SecureStore.setItemAsync("onboarding_completed", "true");
-      await saveSettings({ hasSeenOnboarding: true });
-    } catch (e) {
-      console.warn("SecureStore error", e);
-    }
-    setShowOnboarding(false);
-  };
-
-  const requestLocationPermission = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      track({ name: "permission_granted", props: { permission: "location", result: status } });
-      if (status === "granted") {
-        setLocationStatus("granted");
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        setCurrentLocation({
-          lat: loc.coords.latitude,
-          lng: loc.coords.longitude,
-        });
-      } else {
-        setLocationStatus("denied");
-      }
-    } catch (error) {
-      console.warn("Location error:", error);
-      setLocationStatus("denied");
-      captureException(error, { where: "requestLocationPermission" });
-    }
-  };
-
-  const initWallet = async () => {
-    try {
-      const addr = await getAddress();
-      setWalletAddress(addr);
-      setUser(addr);
-      const bal = await getBalance();
-      const suiBalance = Number(bal) / 1_000_000_000;
-      setBalance(suiBalance.toFixed(4));
-      if (suiBalance > 0) {
-        track({ name: "wallet_funded", props: { balanceSui: suiBalance } });
-      }
-    } catch (error) {
-      console.warn("Wallet init error:", error);
-      captureException(error, { where: "initWallet" });
-    }
-  };
-
-  const handleFaucet = async () => {
-    setStatus("Requesting testnet tokens...");
-    setErrorMsg("");
-    setLoading(true);
-    track({ name: "faucet_requested" });
-    const success = await requestTestnetTokens();
-    setLoading(false);
-    setStatus("");
-    track({ name: "faucet_result", props: { success } });
-    if (success) {
-      showAlert("Success", "Testnet SUI tokens received!");
-      await initWallet();
-    } else {
-      showAlert("Failed", "Could not get testnet tokens. Try again later or use: sui client transfer-sui");
-    }
-  };
-
-  const pickImage = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
-      exif: true,
-    });
+  const startCapture = async () => {
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (!result.canceled && result.assets[0]) {
       const uri = result.assets[0].uri;
       setImageUri(uri);
-      setExif(result.assets[0].exif ?? null);
-      setErrorMsg("");
-      setLiveHash("Computing...");
-      const hash = await hashImage(uri);
-      setLiveHash(hash);
-      track({ name: "image_hashed", props: { source: "camera" } });
+      runSeal(uri);
     }
   };
 
   const pickFromLibrary = async () => {
-    if (settings.cameraOnlyMode) {
-      showAlert(
-        "Camera-Only Mode",
-        "Library picking is disabled. Turn off camera-only mode in Settings to use your photo library."
-      );
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
-      exif: true,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
     if (!result.canceled && result.assets[0]) {
       const uri = result.assets[0].uri;
       setImageUri(uri);
-      setExif(result.assets[0].exif ?? null);
-      setErrorMsg("");
-      setLiveHash("Computing...");
-      const hash = await hashImage(uri);
-      setLiveHash(hash);
-      track({ name: "image_hashed", props: { source: "library" } });
+      runSeal(uri);
     }
   };
 
-  const submitProof = async () => {
-    if (!imageUri) return;
+  const runSeal = async (uri: string) => {
+    setPhase("sealing");
+    setStep(0);
+    
+    // Simulate steps for UI fidelity
+    const timer = setInterval(() => {
+      setStep(s => (s < 2 ? s + 1 : s));
+    }, 800);
 
-    console.log("[SnapProof] Starting submit flow...");
-    logger.info("CAPTURE", "Starting submission flow", { imageUri });
-    setErrorMsg("");
-
-    const startedAt = Date.now();
-    track({ name: "proof_submit_started", props: { hasLocation: !!currentLocation } });
-
-    let stage: string = "init";
     try {
-      setLoading(true);
-
-      // Step 1: Hash the image (use pre-computed liveHash if available)
-      stage = "hash_image";
-      setStatus("Hashing image...");
-      logger.debug("CAPTURE", "Step 1: Hashing image...");
-      const imageHash =
-        liveHash && liveHash !== "Computing..."
-          ? liveHash
-          : await hashImage(imageUri);
-      logger.info("CAPTURE", "Image hash generated", { imageHash });
-
-      // Step 2: Extract and hash metadata
-      stage = "hash_metadata";
-      setStatus("Processing metadata...");
-      logger.debug("CAPTURE", "Step 2: Processing metadata...");
-      const metadata = await extractMetadata(imageUri, exif ?? undefined);
-      const metadataHash = await hashMetadata(metadata);
-      logger.info("CAPTURE", "Metadata hash generated", { metadataHash });
-
-      // Step 3: Compute combined proof hash
-      stage = "hash_proof";
-      const proofHash = await computeProofHash(imageHash, metadataHash);
-      logger.info("CAPTURE", "Combined proof hash generated", { proofHash });
-
-      // Step 4: Capture location
-      stage = "geohash";
-      setStatus("Capturing location...");
-      logger.debug("CAPTURE", "Step 4: Processing location...");
-      let coarseGeoHash = "";
-      if (currentLocation) {
-        coarseGeoHash = encodeGeohash(
-          currentLocation.lat,
-          currentLocation.lng,
-          6
-        );
-        logger.info("CAPTURE", "Geohash computed", { coarseGeoHash });
-      } else {
-        logger.warn("CAPTURE", "No location available, skipping geohash");
-      }
-
-      // Step 5: Upload to Walrus
-      stage = "walrus_upload";
-      setStatus("Uploading to Walrus...");
-      logger.debug("CAPTURE", "Step 5: Uploading to Walrus...");
-      const walrusResult = await uploadToWalrus(imageUri);
-      logger.info("CAPTURE", "Walrus upload complete", { blobId: walrusResult.blobId });
-
-      // Step 6: Create proof on Sui
-      stage = "sui_tx";
-      setStatus("Creating proof on Sui...");
-      logger.debug("CAPTURE", "Step 6: Creating proof on Sui...");
-      const proof: ProofData = {
-        imageHash,
-        metadataHash,
-        proofHash,
-        walrusBlobId: walrusResult.blobId,
-        createdAt: metadata.timestamp,
-        creator: walletAddress,
-        coarseGeoHash: coarseGeoHash || undefined,
-      };
-      const { txDigest, objectId } = await createProofOnSui(proof);
-      logger.info("CAPTURE", "Sui transaction successful", { txDigest, objectId });
-
-      setLoading(false);
-
-      track({
-        name: "proof_submit_succeeded",
-        props: {
-          durationMs: Date.now() - startedAt,
-          hasGeoHash: !!coarseGeoHash,
-          walrusBlobId: walrusResult.blobId,
-        },
+      const hash = await hashImage(uri);
+      setProofHash(hash);
+      
+      const loc = await Location.getCurrentPositionAsync({});
+      const tx = await mintProof(hash, {
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
       });
-
-      // Navigate to proof receipt
-      router.push({
-        pathname: "/proof",
-        params: {
-          imageHash: proof.imageHash,
-          metadataHash: proof.metadataHash,
-          proofHash: proof.proofHash,
-          walrusBlobId: proof.walrusBlobId,
-          txDigest,
-          objectId,
-          createdAt: String(proof.createdAt),
-          creator: walletAddress,
-          coarseGeoHash: coarseGeoHash || "",
-        },
-      });
-    } catch (error) {
-      setLoading(false);
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error("CAPTURE", "Submission failed", { error: message, stage });
-      setErrorMsg(message);
-      setStatus("");
-
-      track({
-        name: "proof_submit_failed",
-        props: {
-          stage,
-          durationMs: Date.now() - startedAt,
-          error: message.slice(0, 200),
-        },
-      });
-      captureException(error, { stage, where: "submitProof" });
-
-      if (message.includes("No valid gas") || message.includes("balance")) {
-        setErrorMsg(
-          `No SUI tokens! Fund this address:\n\n${walletAddress}\n\nRun in terminal:\nsui client transfer-sui --to ${walletAddress} --sui-coin-object-id <YOUR_COIN_ID> --amount 300000000 --gas-budget 10000000`
-        );
-      } else {
-        // Enqueue to outbox on network failure
-        try {
-          await enqueueProof(imageUri, exif, currentLocation, liveHash, message);
-          showAlert(
-            "Saved to Outbox",
-            "Upload failed. Your proof has been saved securely to your local Outbox and will be uploaded automatically when connectivity is restored."
-          );
-          // Clear current image so they can take another
-          setImageUri(null);
-          setLiveHash("");
-          // Refresh count
-          getOutboxQueue().then((q) => setOutboxCount(q.length));
-        } catch (enqueueError) {
-          logger.error("CAPTURE", "Failed to enqueue outbox", { enqueueError });
-          setErrorMsg("Upload failed, and could not save to Outbox.");
-        }
-      }
+      
+      setTxDigest(tx.digest);
+      clearInterval(timer);
+      setStep(3);
+      setTimeout(() => setPhase("sealed"), 600);
+      track({ name: "proof_sealed", props: { network: SUI_NETWORK } });
+    } catch (err) {
+      console.error(err);
+      clearInterval(timer);
+      setPhase("viewfinder");
     }
+  };
+
+  const reset = () => {
+    setPhase("viewfinder");
+    setImageUri(null);
+    setStep(0);
   };
 
   return (
-    <>
+    <GlowBackground topColor="rgba(240,86,110,0.28)" bottomColor="rgba(60,200,240,0.18)">
       <Stack.Screen
         options={{
+          headerTransparent: true,
+          headerTitle: "",
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Feather name="arrow-left" size={20} color={C.silver} />
+            </TouchableOpacity>
+          ),
           headerRight: () => (
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TouchableOpacity
-                onPress={() => router.push("/outbox")}
-                style={{ paddingHorizontal: 12 }}
-              >
-                <Text style={{ fontSize: 18 }}>
-                  📤 {outboxCount > 0 ? `(${outboxCount})` : ""}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => router.push("/settings")}
-                style={{ paddingHorizontal: 12 }}
-              >
-                <Text style={{ fontSize: 18 }}>⚙️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setShowOnboarding(true)}
-                style={{ paddingHorizontal: 12 }}
-              >
-                <Text style={{ fontSize: 20 }}>ℹ️</Text>
-              </TouchableOpacity>
+            <View style={styles.statusChip}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>Live</Text>
             </View>
           ),
         }}
       />
-      <OnboardingModal
-        visible={showOnboarding}
-        onComplete={completeOnboarding}
-      />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {/* Wallet info bar */}
-        <View style={styles.walletBar}>
-          <View style={styles.walletInfo}>
-            <Text style={styles.walletLabel}>WALLET</Text>
-            <Text style={styles.walletAddress} numberOfLines={2} selectable>
-              {walletAddress || "Loading..."}
-            </Text>
-          </View>
-          <View style={styles.balanceInfo}>
-            <Text style={styles.walletLabel}>BALANCE</Text>
-            <Text style={styles.balanceText}>{balance || "..."} SUI</Text>
-          </View>
-          <TouchableOpacity style={styles.faucetButton} onPress={handleFaucet}>
-            <Text style={styles.faucetButtonText}>Faucet</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Time warning */}
-        {timeWarning ? (
-          <View style={styles.warningBox}>
-            <Text style={styles.warningText}>{timeWarning}</Text>
-          </View>
-        ) : null}
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        
+        {phase === "viewfinder" && (
+          <>
+            <FadeUp delay={0}>
+              <View style={styles.hero}>
+                <View style={styles.heroRow}>
+                  <Feather name="camera" size={14} color={C.coral} style={{ marginRight: 6 }} />
+                  <Text style={styles.eyebrow}>Capture</Text>
+                </View>
+                <Text style={styles.heroTitle}>New Proof</Text>
+              </View>
+            </FadeUp>
 
-        {/* Camera-only mode indicator */}
-        {settings.cameraOnlyMode ? (
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>
-              🔒 Camera-only mode: Library picking is disabled.
-            </Text>
-          </View>
-        ) : null}
+            <FadeUp delay={60}>
+              <GlassCard tone="cyan" radius={24} noPad>
+                <View style={styles.viewfinder}>
+                  <View style={styles.viewfinderGrid}>
+                    <View style={styles.gridRow}><View style={styles.gridCell}/><View style={styles.gridCell}/><View style={styles.gridCell}/></View>
+                    <View style={styles.gridRow}><View style={styles.gridCell}/><View style={styles.gridCell}/><View style={styles.gridCell}/></View>
+                    <View style={styles.gridRow}><View style={styles.gridCell}/><View style={styles.gridCell}/><View style={styles.gridCell}/></View>
+                  </View>
+                  <View style={styles.reticle}>
+                    <View style={[styles.reticleCorner, { top: -2, left: -2, borderTopWidth: 2, borderLeftWidth: 2, borderColor: C.coral }]} />
+                    <View style={[styles.reticleCorner, { top: -2, right: -2, borderTopWidth: 2, borderRightWidth: 2, borderColor: C.coral }]} />
+                    <View style={[styles.reticleCorner, { bottom: -2, left: -2, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: C.coral }]} />
+                    <View style={[styles.reticleCorner, { bottom: -2, right: -2, borderBottomWidth: 2, borderRightWidth: 2, borderColor: C.coral }]} />
+                  </View>
+                  <View style={styles.viewfinderOverlay}>
+                    <View style={styles.liveBadge}>
+                      <View style={styles.liveDot} />
+                      <Text style={styles.liveText}>LIVE</Text>
+                    </View>
+                    <Text style={styles.resText}>4032 × 3024</Text>
+                  </View>
+                </View>
+              </GlassCard>
+            </FadeUp>
 
-        {/* Location status */}
-        <View style={styles.locationBar}>
-          <Text style={styles.locationDot}>
-            {locationStatus === "granted" ? "●" : "○"}
-          </Text>
-          <Text style={styles.locationText}>
-            {locationStatus === "granted"
-              ? currentLocation
-                ? `Location: ${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}`
-                : "Getting location..."
-              : locationStatus === "denied"
-              ? "Location disabled — proof will have no geotag"
-              : "Requesting location..."}
-          </Text>
-          {locationStatus === "denied" && (
-            <TouchableOpacity onPress={requestLocationPermission}>
-              <Text style={styles.locationRetry}>Enable</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+            <FadeUp delay={120}>
+              <View style={styles.shutterContainer}>
+                <TouchableOpacity onPress={pickFromLibrary} style={styles.toolBtn}>
+                  <Feather name="image" size={20} color={C.silver} />
+                </TouchableOpacity>
 
-        {/* Image preview */}
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.preview} />
-        ) : (
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>No photo captured</Text>
-          </View>
+                <TouchableOpacity onPress={startCapture} style={styles.shutterOuter} activeOpacity={0.9}>
+                  <View style={styles.shutterInner}>
+                    <View style={styles.shutterCore}>
+                       <Feather name="camera" size={24} color="#fff" />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => router.push("/settings")} style={styles.toolBtn}>
+                  <Feather name="settings" size={20} color={C.silver} />
+                </TouchableOpacity>
+              </View>
+            </FadeUp>
+
+            <FadeUp delay={180}>
+              <Text style={styles.hintTitle}>Frame your shot.</Text>
+              <Text style={styles.hintSub}>We seal it instantly on Sui.</Text>
+            </FadeUp>
+          </>
         )}
 
-        {/* Live hash preview */}
-        {liveHash ? (
-          <View style={styles.hashBar}>
-            <Text style={styles.hashLabel}>IMAGE HASH (LIVE)</Text>
-            <Text style={styles.hashValue} selectable numberOfLines={2}>
-              {liveHash === "Computing..."
-                ? "Computing…"
-                : `${liveHash.slice(0, 16)}…${liveHash.slice(-12)}`}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Error display */}
-        {errorMsg ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText} selectable>{errorMsg}</Text>
-          </View>
-        ) : null}
-
-        {/* Actions */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#e94560" />
-            <Text style={styles.statusText}>{status}</Text>
-          </View>
-        ) : (
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.button} onPress={pickImage}>
-              <Text style={styles.buttonText}>
-                {imageUri ? "Retake Photo" : "Take Photo"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.libraryButton,
-                settings.cameraOnlyMode && styles.buttonDisabled,
-              ]}
-              onPress={pickFromLibrary}
-              disabled={settings.cameraOnlyMode}
-            >
-              <Text style={styles.buttonText}>
-                {settings.cameraOnlyMode
-                  ? "Library Disabled (Camera-Only Mode)"
-                  : "Pick from Library"}
-              </Text>
-            </TouchableOpacity>
-
-            {imageUri && (
-              <TouchableOpacity
-                style={[styles.button, styles.submitButton]}
-                onPress={submitProof}
-              >
-                <Text style={styles.buttonText}>Submit Proof to Sui</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+        {phase === "sealing" && (
+          <FadeUp delay={0}>
+            <ProcessState
+              title="Sealing on Sui"
+              subtitle="Don't move a pixel."
+              steps={SEAL_STEPS}
+              currentStep={step}
+              totalSteps={SEAL_STEPS.length}
+              icon="sparkles"
+            />
+          </FadeUp>
         )}
+
+        {phase === "sealed" && (
+          <FadeUp delay={0}>
+            <GlassCard radius={24}>
+              <View style={styles.sealedInner}>
+                <View style={styles.sealedHeader}>
+                  <View style={styles.sealedBadge}>
+                    <Ionicons name="checkmark-circle" size={12} color={C.mint} style={{ marginRight: 4 }} />
+                    <Text style={styles.sealedBadgeText}>SEALED</Text>
+                  </View>
+                  <Text style={styles.epochText}>EPOCH 412</Text>
+                </View>
+                
+                <View style={styles.sealedRow}>
+                  <View style={styles.sealedPreview}>
+                    {imageUri ? (
+                      <Image source={{ uri: imageUri }} style={styles.sealedImg} />
+                    ) : (
+                      <View style={styles.sealedImgPlaceholder}>
+                         <Feather name="image" size={24} color={C.slate} />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.sealedInfo}>
+                    <Text style={styles.sealedTitle}>Proof #129</Text>
+                    <View style={styles.sealedMeta}>
+                      <Text style={styles.sealedMetaText}>
+                        <Feather name="clock" size={11} color={C.slate} /> just now
+                      </Text>
+                    </View>
+                    <View style={styles.hashTag}>
+                      <Feather name="hash" size={10} color={C.cyan} style={{ marginRight: 4 }} />
+                      <Text style={styles.hashTagText} numberOfLines={1}>{proofHash?.slice(0, 16) || "0x9f2...c41a"}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <CoralButton onPress={reset} style={{ marginTop: 24 }}>
+                  <View style={styles.btnRow}>
+                    <Feather name="refresh-ccw" size={18} color="#fff" style={{ marginRight: 10 }} />
+                    <Text style={styles.coralBtnText}>Capture another</Text>
+                  </View>
+                </CoralButton>
+                
+                <View style={styles.sealedActions}>
+                  <CyanButton onPress={() => router.push("/map")} style={{ flex: 1 }}>
+                    <View style={styles.btnRow}>
+                      <Feather name="map-pin" size={16} color={C.silver} style={{ marginRight: 8 }} />
+                      <Text style={styles.cyanBtnText}>Map</Text>
+                    </View>
+                  </CyanButton>
+                  <CyanButton onPress={() => Linking.openURL(`https://suiscan.xyz/${SUI_NETWORK}/tx/${txDigest}`)} style={{ flex: 1 }}>
+                    <View style={styles.btnRow}>
+                      <Feather name="external-link" size={16} color={C.silver} style={{ marginRight: 8 }} />
+                      <Text style={styles.cyanBtnText}>Explorer</Text>
+                    </View>
+                  </CyanButton>
+                </View>
+              </View>
+            </GlassCard>
+          </FadeUp>
+        )}
+
+        <Text style={styles.builtOn}>Built on Sui</Text>
       </ScrollView>
-    </>
+    </GlowBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#1a1a2e",
+  scroll: {
+    paddingTop: Platform.OS === "ios" ? 110 : 90,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  walletBar: {
-    flexDirection: "row",
-    backgroundColor: "#16213e",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    alignItems: "center",
-  },
-  walletInfo: {
-    flex: 1,
-  },
-  balanceInfo: {
-    marginRight: 12,
-  },
-  walletLabel: {
-    color: "#666",
-    fontSize: 10,
-    textTransform: "uppercase",
-  },
-  walletAddress: {
-    color: "#aaa",
-    fontSize: 12,
-    fontFamily: "monospace",
-  },
-  balanceText: {
-    color: "#4ecca3",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  faucetButton: {
-    backgroundColor: "#0f3460",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  faucetButtonText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  warningBox: {
-    backgroundColor: "#4a2e00",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: "#ffb84d",
-  },
-  warningText: {
-    color: "#ffb84d",
-    fontSize: 12,
-  },
-  infoBox: {
-    backgroundColor: "#0f3460",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  infoText: {
-    color: "#5dade2",
-    fontSize: 12,
-  },
-  locationBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#16213e",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
-  },
-  locationDot: {
-    color: "#4ecca3",
-    fontSize: 14,
-    marginRight: 8,
-  },
-  locationText: {
-    color: "#aaa",
-    fontSize: 12,
-    flex: 1,
-  },
-  locationRetry: {
-    color: "#5dade2",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  preview: {
-    height: 300,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  placeholder: {
-    height: 300,
-    borderRadius: 12,
-    backgroundColor: "#16213e",
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(20,28,52,0.65)",
+    borderWidth: 1,
+    borderColor: C.glassBorder,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    marginLeft: 16,
   },
-  placeholderText: {
-    color: "#555",
-    fontSize: 16,
-  },
-  hashBar: {
-    backgroundColor: "#16213e",
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: "#4ecca3",
-  },
-  hashLabel: {
-    color: "#666",
-    fontSize: 9,
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  hashValue: {
-    color: "#4ecca3",
-    fontSize: 11,
-    fontFamily: "monospace",
-  },
-  errorBox: {
-    backgroundColor: "#641220",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: "#ff6b6b",
-    fontSize: 13,
-    fontFamily: "monospace",
-  },
-  loadingContainer: {
+  backIcon: { color: C.silver, fontSize: 20 },
+  statusChip: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 24,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: C.glassBorder,
+    backgroundColor: "rgba(20,28,52,0.65)",
+    marginRight: 16,
   },
-  statusText: {
-    color: "#aaa",
-    marginTop: 12,
-    fontSize: 14,
-  },
-  actions: {
-    gap: 12,
-  },
-  button: {
-    backgroundColor: "#e94560",
-    paddingVertical: 16,
-    borderRadius: 12,
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.mint },
+  statusText: { color: C.silver, fontSize: 12, fontWeight: "600" },
+  hero: { marginBottom: 20 },
+  heroRow: { flexDirection: "row", alignItems: "center" },
+  eyebrow: { ...TYPE.eyebrow },
+  heroTitle: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
+  viewfinder: {
+    aspectRatio: 3 / 4,
+    borderRadius: 20,
+    backgroundColor: "#050813",
+    overflow: "hidden",
     alignItems: "center",
+    justifyContent: "center",
   },
-  buttonDisabled: {
-    opacity: 0.4,
+  viewfinderGrid: { ...StyleSheet.absoluteFillObject },
+  gridRow: { flex: 1, flexDirection: "row" },
+  gridCell: { flex: 1, borderColor: "rgba(255,255,255,0.05)", borderWidth: 0.5 },
+  reticle: { width: 80, height: 80, borderRadius: 12 },
+  reticleCorner: { position: "absolute", width: 14, height: 14 },
+  viewfinderOverlay: { position: "absolute", top: 12, left: 12, right: 12, flexDirection: "row", justifyContent: "space-between" },
+  liveBadge: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100,
   },
-  libraryButton: {
-    backgroundColor: "#533483",
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.coral },
+  liveText: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  resText: { color: "rgba(255,255,255,0.6)", fontSize: 10, fontFamily: "monospace" },
+  shutterContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 32, paddingHorizontal: 10 },
+  toolBtn: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.03)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
+    alignItems: "center", justifyContent: "center",
   },
-  submitButton: {
-    backgroundColor: "#0f3460",
+  shutterOuter: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: "rgba(240,86,110,0.15)", padding: 4,
+    shadowColor: C.coral, shadowOpacity: 0.4, shadowRadius: 20,
   },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  shutterInner: {
+    flex: 1, borderRadius: 40, backgroundColor: "rgba(255,255,255,0.9)", padding: 8,
+  },
+  shutterCore: {
+    flex: 1, borderRadius: 32, backgroundColor: C.coral,
+    alignItems: "center", justifyContent: "center",
+  },
+  hintTitle: { fontSize: 24, fontWeight: "800", color: C.textPrimary, marginTop: 24, textAlign: "center" },
+  hintSub: { fontSize: 15, color: C.silver, marginTop: 4, textAlign: "center" },
+  sealedInner: { padding: 4 },
+  sealedHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  sealedBadge: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "rgba(64,224,163,0.1)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
+  },
+  sealedBadgeText: { color: C.mint, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
+  epochText: { fontSize: 10, color: C.slate, fontFamily: "monospace" },
+  sealedRow: { flexDirection: "row", gap: 16 },
+  sealedPreview: { width: 84, height: 84, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.03)", overflow: "hidden" },
+  sealedImg: { width: "100%", height: "100%" },
+  sealedImgPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
+  sealedInfo: { flex: 1, justifyContent: "center" },
+  sealedTitle: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
+  sealedMeta: { marginTop: 6 },
+  sealedMetaText: { fontSize: 12, color: C.slate, flexDirection: "row", alignItems: "center" },
+  hashTag: {
+    marginTop: 10, alignSelf: "flex-start", flexDirection: "row", alignItems: "center",
+    backgroundColor: "rgba(60,200,240,0.08)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100,
+  },
+  hashTagText: { color: C.cyan, fontSize: 11, fontFamily: "monospace" },
+  btnRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  coralBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  sealedActions: { flexDirection: "row", gap: 12, marginTop: 12 },
+  cyanBtnText: { color: C.silver, fontSize: 14, fontWeight: "600" },
+  builtOn: {
+    marginTop: 40, textAlign: "center", fontSize: 10, fontWeight: "600",
+    textTransform: "uppercase", letterSpacing: 3, color: "rgba(132,142,160,0.4)",
   },
 });

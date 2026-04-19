@@ -1,5 +1,9 @@
 import { Platform } from "react-native";
-import { WALRUS_PUBLISHER_URL, WALRUS_AGGREGATOR_URL } from "../config";
+import {
+  WALRUS_PUBLISHER_URL,
+  WALRUS_AGGREGATOR_URL,
+  WALRUS_AGGREGATOR_URLS,
+} from "../config";
 import { logger } from "../utils/logger";
 
 interface WalrusNewlyCreated {
@@ -101,8 +105,22 @@ export async function uploadToWalrus(
 }
 
 /**
- * Get the URL to view/download a blob from Walrus aggregator.
+ * Get the canonical URL to view/download a blob from Walrus.
+ * Prefer `getWalrusViewUrls(blobId)` when you can, so the caller can fall
+ * through to another aggregator on 403 / 404 / 5xx.
  */
 export function getWalrusViewUrl(blobId: string): string {
   return `${WALRUS_AGGREGATOR_URL}/v1/blobs/${blobId}`;
+}
+
+/**
+ * Get every candidate URL for a blob across the configured aggregator chain,
+ * in priority order. The primary aggregator comes first; public mirrors follow.
+ *
+ * Use with `<ResilientImage uris={…} />` so a single mirror 403ing for a
+ * specific blob doesn't kill the thumbnail.
+ */
+export function getWalrusViewUrls(blobId: string): string[] {
+  if (!blobId) return [];
+  return WALRUS_AGGREGATOR_URLS.map((base) => `${base}/v1/blobs/${blobId}`);
 }

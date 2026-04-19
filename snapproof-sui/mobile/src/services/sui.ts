@@ -14,6 +14,8 @@ function getSuiClient(): SuiClient {
   return client;
 }
 
+export const mintProof = createProofOnSui;
+
 export interface CreateProofResult {
   txDigest: string;
   objectId: string;
@@ -155,6 +157,42 @@ export async function lookupProofByImageHash(
 }
 
 /**
+ * Fetch recent proofs globally for this package by querying events.
+ */
+export async function getProofs(limit = 20): Promise<ProofData[]> {
+  try {
+    const suiClient = getSuiClient();
+    const events = await suiClient.queryEvents({
+      query: {
+        MoveEventType: `${PROOF_PACKAGE_ID}::snapproof::ProofCreated`,
+      },
+      limit,
+      order: "descending",
+    });
+
+    const results: ProofData[] = [];
+    for (const event of events.data) {
+      const parsed = event.parsedJson as any;
+      results.push({
+        id: parsed.proof_id,
+        imageHash: parsed.image_hash,
+        metadataHash: parsed.metadata_hash,
+        proofHash: parsed.proof_hash,
+        walrusBlobId: parsed.walrus_blob_id,
+        createdAt: Number(parsed.created_at || 0),
+        creator: event.sender,
+        coarseGeoHash: parsed.coarse_geo_hash || "",
+        caseId: parsed.case_id || "",
+      });
+    }
+    return results;
+  } catch (error) {
+    logger.error("SUI", "Failed to fetch proofs", error);
+    return [];
+  }
+}
+
+/**
  * Check wallet balance. Returns SUI balance in MIST.
  */
 export async function getBalance(): Promise<bigint> {
@@ -165,3 +203,35 @@ export async function getBalance(): Promise<bigint> {
   });
   return BigInt(balance.totalBalance);
 }
+
+/**
+ * Request gas from Sui faucet (Devnet/Testnet).
+ */
+export async function faucet(): Promise<void> {
+  try {
+    const keypair = await getKeypair();
+    const address = keypair.toSuiAddress();
+    
+    // In a real app, you might use a dedicated faucet package or service
+    // For Devnet/Testnet, we can use the official faucet URL
+    const faucetUrl = SUI_NETWORK === "devnet" 
+      ? "https://faucet.devnet.sui.io/gas"
+      : "https://faucet.testnet.sui.io/gas";
+      
+    const response = await fetch(faucetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ FixedAmountRequest: { recipient: address } }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Faucet request failed: ${response.statusText}`);
+    }
+    
+    logger.info("SUI", "Faucet request successful");
+  } catch (error) {
+    logger.error("SUI", "Faucet error", error);
+    throw error;
+  }
+}
+
