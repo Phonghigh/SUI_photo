@@ -27,6 +27,7 @@ import { FadeUp } from "../src/components/FadeUp";
 import { getAddress } from "../src/services/wallet";
 import { getBalance, getProofs } from "../src/services/sui";
 import { SUI_NETWORK } from "../src/config";
+import { LinearGradient } from "expo-linear-gradient";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -139,58 +140,77 @@ export default function HomeScreen() {
           </View>
         </FadeUp>
 
-        {/* 3. Wallet Card */}
+        {/* 3. Identity Card (Wallet) */}
         <FadeUp delay={120}>
-          <GlassCard style={styles.walletCard} radius={24}>
+          <GlassCard style={styles.walletCard} radius={28} tone="cyan">
             <View style={styles.walletInner}>
-              <View style={styles.walletRow}>
-                <View style={styles.avatarWrap}>
-                  <View style={styles.avatarInner} />
+              <View style={styles.walletHeader}>
+                <View style={styles.avatarContainer}>
+                  <LinearGradient
+                    colors={[C.cyan, C.purple]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.avatarGlow}
+                  >
+                    <View style={styles.avatarInner}>
+                      <Ionicons name="finger-print" size={24} color="#fff" />
+                    </View>
+                  </LinearGradient>
+                  <View style={styles.onlineStatus} />
                 </View>
-                <View style={styles.walletAddrBlock}>
-                  <Text style={styles.walletLabel}>WALLET</Text>
-                  <Text style={styles.walletAddr}>{truncated}</Text>
+
+                <View style={styles.identityInfo}>
+                  <Text style={styles.identityLabel}>OPERATOR ID</Text>
+                  <View style={styles.addrRow}>
+                    <Text style={styles.walletAddr}>{truncated}</Text>
+                    <TouchableOpacity
+                      onPress={handleCopy}
+                      style={styles.copyBadge}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name={copied ? "check" : "copy"} size={12} color={copied ? C.mint : C.cyan} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <TouchableOpacity
-                  onPress={handleCopy}
-                  style={styles.copyBtn}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                  accessibilityRole="button"
-                  accessibilityLabel={copied ? "Wallet address copied" : "Copy wallet address"}
-                  accessibilityState={{ disabled: false }}
-                >
-                  <Text style={styles.copyIcon}>
-                    {copied ? (
-                      <Ionicons name="checkmark" size={16} color={C.mint} />
-                    ) : (
-                      <Feather name="copy" size={16} color={C.slate} />
-                    )}
-                  </Text>
-                </TouchableOpacity>
               </View>
 
-              <View style={styles.statsGrid}>
-                <View style={styles.statCell}>
-                  <Text style={styles.statLabel}>Proofs sealed</Text>
-                  <Text style={styles.statValue}>{stats.total}</Text>
+              <View style={styles.divider} />
+
+              <View style={styles.statsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>SEALED PROOFS</Text>
+                  <View style={styles.statValueRow}>
+                    <Text style={styles.statValue}>{stats.total}</Text>
+                    <View style={styles.trendingUp}>
+                      <Feather name="arrow-up-right" size={12} color={C.mint} />
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.statCell}>
-                  <Text style={styles.statLabel}>This week</Text>
-                  <Text style={[styles.statValue, { color: C.mint }]}>+{stats.week}</Text>
+
+                <View style={styles.statDivider} />
+
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>NETWORK HEALTH</Text>
+                  <View style={styles.statValueRow}>
+                    <Text style={[styles.statValue, { color: C.mint }]}>ACTIVE</Text>
+                    <View style={styles.pulseContainer}>
+                      <View style={styles.pulseDot} />
+                    </View>
+                  </View>
                 </View>
               </View>
 
               <View style={styles.walletFooter}>
                 <View style={styles.footerInfo}>
-                  <View style={[styles.footerDot, { backgroundColor: stats.total > 0 ? C.mint : C.slate }]} />
+                  <Feather name="database" size={12} color={C.slate} style={{ marginRight: 6 }} />
                   <Text style={styles.footerText}>
-                    Last seal <Text style={{ color: C.silver }}>· {stats.lastSeal}</Text>
+                    Walrus Storage <Text style={{ color: C.silver }}>· Synchronized</Text>
                   </Text>
                 </View>
 
-                <View style={styles.balanceContainer}>
-                  <Text style={styles.balanceText}>{balance || "0.000"} SUI</Text>
+                <View style={styles.balanceTag}>
+                  <Text style={styles.balanceLabel}>BAL</Text>
+                  <Text style={styles.balanceAmount}>{balance || "0.000"} SUI</Text>
                 </View>
               </View>
             </View>
@@ -313,133 +333,166 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   walletCard: {
-    marginBottom: 28,
+    marginBottom: 24,
   },
   walletInner: {
+    gap: 16,
     padding: 20,
   },
-  walletRow: {
+  walletHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 20,
+    gap: 16,
   },
-  avatarWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: C.coral,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    overflow: "hidden",
+  avatarContainer: {
+    position: "relative",
+  },
+  avatarGlow: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    padding: 2,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarInner: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "rgba(12,18,42,0.8)",
-  },
-  walletAddrBlock: {
-    flex: 1,
-  },
-  walletLabel: {
-    ...TYPE.eyebrow,
-    fontSize: 10,
-    marginBottom: 2,
-  },
-  walletAddr: {
-    fontSize: 14,
-    fontFamily: "monospace",
-    color: C.silver,
-  },
-  copyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    width: "100%",
+    height: "100%",
+    borderRadius: 24,
+    backgroundColor: "rgba(10,15,30,0.8)",
     alignItems: "center",
     justifyContent: "center",
   },
-  copyIcon: {
-    fontSize: 14,
-    color: C.slate,
+  onlineStatus: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: C.mint,
+    borderWidth: 2,
+    borderColor: "#050813",
   },
-  statsGrid: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 20,
-  },
-  statCell: {
+  identityInfo: {
     flex: 1,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
+  },
+  identityLabel: {
+    ...TYPE.eyebrow,
+    fontSize: 10,
+    marginBottom: 6,
+    color: C.cyan,
+  },
+  addrRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  walletAddr: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: C.textPrimary,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  copyBadge: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  statBox: {
+    flex: 1,
   },
   statLabel: {
     ...TYPE.eyebrow,
     fontSize: 10,
     marginBottom: 6,
+    color: C.silver,
   },
   statValue: {
     fontSize: 24,
     fontWeight: "800",
-    letterSpacing: -0.5,
     color: C.textPrimary,
+    letterSpacing: -0.5,
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    marginHorizontal: 20,
+  },
+  statValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  trendingUp: {
+    padding: 2,
+    borderRadius: 4,
+    backgroundColor: "rgba(64,224,163,0.1)",
+  },
+  pulseContainer: {
+    width: 10,
+    height: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.mint,
+    shadowColor: C.mint,
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
   },
   walletFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.05)",
-    paddingTop: 16,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    padding: 12,
+    borderRadius: 16,
   },
   footerInfo: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-  },
-  balanceContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  balanceText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: C.silver,
-  },
-  getGasBtn: {
-    backgroundColor: C.coral,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  getGasText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#fff",
-  },
-  footerDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.mint,
+    flex: 1,
+    marginRight: 10,
   },
   footerText: {
+    fontSize: 11,
+    color: C.silver, // Brighter for better visibility
+  },
+  balanceTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(60,200,240,0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    minWidth: 85,
+    justifyContent: "center",
+  },
+  balanceLabel: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: C.cyan,
+  },
+  balanceAmount: {
     fontSize: 12,
-    color: C.slate,
+    fontWeight: "800",
+    color: "#fff",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   primaryBtn: {
     marginBottom: 12,
