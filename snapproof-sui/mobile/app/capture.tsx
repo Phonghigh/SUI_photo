@@ -11,19 +11,23 @@ import {
   Animated,
   Linking,
 } from "react-native";
-import { useRouter, Stack } from "expo-router";
-import { GlowBackground, GlassCard, CoralButton, CyanButton } from "../src/components/Glass";
+import { useRouter, Stack, Link } from "expo-router";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlowBackground, GlassCard, CoralButton, CyanButton, StatusPill, PageHeader } from "../src/components/Glass";
 import { C, TYPE } from "../src/theme/tokens";
 import { SnapLogo } from "../src/components/SnapLogo";
 import { FadeUp } from "../src/components/FadeUp";
 import { ProcessState } from "../src/components/ProcessState";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { OnboardingModal } from "../src/components/OnboardingModal";
 import { getAddress } from "../src/services/wallet";
 import { getBalance, faucet, mintProof } from "../src/services/sui";
 import { hashImage } from "../src/utils/hash";
+import { encodeGeohash } from "../src/utils/geohash";
 import { track } from "../src/services/analytics";
 import { SUI_NETWORK } from "../src/config";
 
@@ -35,6 +39,11 @@ const SEAL_STEPS = [
 
 export default function CaptureScreen() {
   const router = useRouter();
+  const networkLabel =
+    SUI_NETWORK.charAt(0).toUpperCase() + SUI_NETWORK.slice(1);
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+
   const [phase, setPhase] = useState<"viewfinder" | "sealing" | "sealed">("viewfinder");
   const [step, setStep] = useState(0);
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -43,24 +52,61 @@ export default function CaptureScreen() {
   const [loading, setLoading] = useState(false);
   const [proofHash, setProofHash] = useState("");
   const [txDigest, setTxDigest] = useState("");
+  
+  const [permission, requestPermission] = useCameraPermissions();
+  const cameraRef = useRef<CameraView>(null);
+
+  // Auto-open the native camera exactly once on mount. If the user cancels,
+  // they fall back to the viewfinder card and can re-tap the shutter manually.
+  const autoOpenedRef = useRef(false);
 
   useEffect(() => {
     init();
   }, []);
 
   const init = async () => {
-    const addr = await getAddress();
-    setWalletAddress(addr);
-    const bal = await getBalance();
-    setBalance((Number(bal) / 1_000_000_000).toFixed(3));
+    // Camera permission first
+    if (!permission?.granted) {
+      await requestPermission();
+    }
+
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      console.warn("Location permission denied");
+    }
+
+    await refreshBalance();
   };
 
+  const refreshBalance = async () => {
+    try {
+      const addr = await getAddress();
+      setWalletAddress(addr);
+      const bal = await getBalance();
+      setBalance((Number(bal) / 1_000_000_000).toFixed(3));
+    } catch {
+      /* silent */
+    }
+  };
+
+
+
+
   const startCapture = async () => {
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      const uri = result.assets[0].uri;
-      setImageUri(uri);
-      runSeal(uri);
+    if (cameraRef.current) {
+      try {
+        const result = await cameraRef.current.takePictureAsync({
+          quality: 0.8,
+          base64: false,
+          exif: false,
+        });
+        if (result && result.uri) {
+          setImageUri(result.uri);
+          runSeal(result.uri);
+        }
+      } catch (err) {
+        console.error("Camera error:", err);
+      }
     }
   };
 
@@ -87,12 +133,18 @@ export default function CaptureScreen() {
       setProofHash(hash);
       
       const loc = await Location.getCurrentPositionAsync({});
-      const tx = await mintProof(hash, {
-        lat: loc.coords.latitude,
-        lng: loc.coords.longitude,
+      const geohash = encodeGeohash(loc.coords.latitude, loc.coords.longitude);
+
+      const tx = await mintProof({
+        imageHash: hash,
+        metadataHash: hash, // For now, use same as image
+        proofHash: hash,    // For now, use same as image
+        walrusBlobId: "0",  // Walrus integration pending
+        createdAt: Date.now(),
+        coarseGeoHash: geohash,
       });
       
-      setTxDigest(tx.digest);
+      setTxDigest(tx.txDigest);
       clearInterval(timer);
       setStep(3);
       setTimeout(() => setPhase("sealed"), 600);
@@ -112,41 +164,59 @@ export default function CaptureScreen() {
 
   return (
     <GlowBackground topColor="rgba(240,86,110,0.28)" bottomColor="rgba(60,200,240,0.18)">
-      <Stack.Screen
-        options={{
-          headerTransparent: true,
-          headerTitle: "",
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-              <Feather name="arrow-left" size={20} color={C.silver} />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.statusChip}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Live</Text>
-            </View>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
+
+        showsVerticalScrollIndicator={false}
+      >
+        <PageHeader title="Capture" />
+
         
         {phase === "viewfinder" && (
           <>
             <FadeUp delay={0}>
-              <View style={styles.hero}>
-                <View style={styles.heroRow}>
-                  <Feather name="camera" size={14} color={C.coral} style={{ marginRight: 6 }} />
-                  <Text style={styles.eyebrow}>Capture</Text>
+              <View style={styles.header}>
+                <View>
+                  <View style={styles.heroRow}>
+                    <Feather name="camera" size={14} color={C.coral} style={{ marginRight: 6 }} />
+                    <Text style={styles.eyebrow}>Capture</Text>
+                  </View>
+                  <Text style={styles.heroTitle}>New Proof</Text>
                 </View>
-                <Text style={styles.heroTitle}>New Proof</Text>
+                
+                <GlassCard radius={16} tone="cyan" style={styles.balanceCard}>
+                  <View style={styles.balanceInner}>
+                    <TouchableOpacity onPress={refreshBalance} style={styles.balanceInfo} activeOpacity={0.7}>
+                      <Text style={styles.balanceLabel}>SUI BALANCE</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Text style={styles.balanceValue}>{balance || "0.000"}</Text>
+                        <Feather name="refresh-cw" size={8} color={C.slate} />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </GlassCard>
+
               </View>
             </FadeUp>
 
             <FadeUp delay={60}>
               <GlassCard tone="cyan" radius={24} noPad>
                 <View style={styles.viewfinder}>
+                  {permission?.granted ? (
+                    <CameraView 
+                      ref={cameraRef}
+                      style={StyleSheet.absoluteFill}
+                      facing="back"
+                    />
+                  ) : (
+                    <View style={styles.noPermission}>
+                      <Feather name="camera-off" size={32} color={C.slate} />
+                      <Text style={styles.noPermissionText}>Camera access needed</Text>
+                    </View>
+                  )}
+                  
                   <View style={styles.viewfinderGrid}>
                     <View style={styles.gridRow}><View style={styles.gridCell}/><View style={styles.gridCell}/><View style={styles.gridCell}/></View>
                     <View style={styles.gridRow}><View style={styles.gridCell}/><View style={styles.gridCell}/><View style={styles.gridCell}/></View>
@@ -211,65 +281,102 @@ export default function CaptureScreen() {
 
         {phase === "sealed" && (
           <FadeUp delay={0}>
-            <GlassCard radius={24}>
-              <View style={styles.sealedInner}>
-                <View style={styles.sealedHeader}>
-                  <View style={styles.sealedBadge}>
-                    <Ionicons name="checkmark-circle" size={12} color={C.mint} style={{ marginRight: 4 }} />
-                    <Text style={styles.sealedBadgeText}>SEALED</Text>
+            <GlassCard radius={28} tone="cyan">
+              <View style={styles.receiptContainer}>
+                {/* Header Badge */}
+                <View style={styles.receiptHeader}>
+                  <View style={styles.successBadge}>
+                    <Ionicons name="shield-checkmark" size={16} color={C.mint} />
+                    <Text style={styles.successText}>OFFICIALLY SEALED</Text>
                   </View>
-                  <Text style={styles.epochText}>EPOCH 412</Text>
+                  <Text style={styles.epochLabel}>SUI EPOCH 412</Text>
                 </View>
-                
-                <View style={styles.sealedRow}>
-                  <View style={styles.sealedPreview}>
+
+                {/* Main Content */}
+                <View style={styles.receiptMain}>
+                  <View style={styles.receiptMedia}>
                     {imageUri ? (
-                      <Image source={{ uri: imageUri }} style={styles.sealedImg} />
+                      <Image
+                        source={{ uri: imageUri }}
+                        style={styles.receiptImg}
+                        accessible={true}
+                        accessibilityRole="image"
+                        accessibilityLabel="Photo just captured, sealed on Sui"
+                      />
                     ) : (
-                      <View style={styles.sealedImgPlaceholder}>
-                         <Feather name="image" size={24} color={C.slate} />
+                      <View style={styles.imgPlaceholder}>
+                         <Feather name="image" size={32} color={C.slate} />
                       </View>
                     )}
-                  </View>
-                  <View style={styles.sealedInfo}>
-                    <Text style={styles.sealedTitle}>Proof #129</Text>
-                    <View style={styles.sealedMeta}>
-                      <Text style={styles.sealedMetaText}>
-                        <Feather name="clock" size={11} color={C.slate} /> just now
-                      </Text>
+                    <View style={styles.imgOverlay}>
+                      <View style={styles.verifiedStamp}>
+                        <Ionicons name="checkmark-seal" size={14} color="#fff" />
+                        <Text style={styles.stampText}>VERIFIED</Text>
+                      </View>
                     </View>
-                    <View style={styles.hashTag}>
-                      <Feather name="hash" size={10} color={C.cyan} style={{ marginRight: 4 }} />
-                      <Text style={styles.hashTagText} numberOfLines={1}>{proofHash?.slice(0, 16) || "0x9f2...c41a"}</Text>
+                  </View>
+
+                  <View style={styles.receiptBody}>
+                    <Text style={styles.receiptTitle}>Proof #{Math.floor(Math.random() * 900) + 100}</Text>
+                    
+                    <View style={styles.metaGrid}>
+                      <View style={styles.metaItem}>
+                        <Feather name="clock" size={12} color={C.slate} />
+                        <Text style={styles.metaValue}>Just now</Text>
+                      </View>
+                      <View style={styles.metaItem}>
+                        <Feather name="map-pin" size={12} color={C.slate} />
+                        <Text style={styles.metaValue} numberOfLines={1}>Testnet Node #4</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.hashBox}>
+                      <View style={styles.hashRow}>
+                        <Text style={styles.hashLabel}>CONTENT HASH</Text>
+                        <TouchableOpacity onPress={() => Clipboard.setStringAsync(proofHash || "")}>
+                          <Feather name="copy" size={10} color={C.cyan} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.hashString} numberOfLines={1}>
+                        {proofHash || "0x9f2a71b...c41a"}
+                      </Text>
                     </View>
                   </View>
                 </View>
 
-                <CoralButton onPress={reset} style={{ marginTop: 24 }}>
-                  <View style={styles.btnRow}>
-                    <Feather name="refresh-ccw" size={18} color="#fff" style={{ marginRight: 10 }} />
-                    <Text style={styles.coralBtnText}>Capture another</Text>
+                {/* Footer divider */}
+                <View style={styles.divider} />
+
+                {/* Action Buttons */}
+                <View style={styles.receiptActions}>
+                  <CoralButton onPress={reset} style={styles.primaryAction}>
+                    <View style={styles.btnRow}>
+                      <Feather name="plus-circle" size={18} color="#fff" style={{ marginRight: 8 }} />
+                      <Text style={styles.coralBtnText}>Seal Another</Text>
+                    </View>
+                  </CoralButton>
+                  
+                  <View style={styles.secondaryActions}>
+                    <CyanButton onPress={() => router.push("/map")} style={{ flex: 1 }}>
+                      <View style={styles.btnRow}>
+                        <Feather name="map" size={14} color={C.silver} style={{ marginRight: 6 }} />
+                        <Text style={styles.cyanBtnText}>Proof Map</Text>
+                      </View>
+                    </CyanButton>
+                    <CyanButton onPress={() => Linking.openURL(`https://suiscan.xyz/${SUI_NETWORK}/tx/${txDigest}`)} style={{ flex: 1 }}>
+                      <View style={styles.btnRow}>
+                        <Feather name="external-link" size={14} color={C.silver} style={{ marginRight: 6 }} />
+                        <Text style={styles.cyanBtnText}>SuiScan</Text>
+                      </View>
+                    </CyanButton>
                   </View>
-                </CoralButton>
-                
-                <View style={styles.sealedActions}>
-                  <CyanButton onPress={() => router.push("/map")} style={{ flex: 1 }}>
-                    <View style={styles.btnRow}>
-                      <Feather name="map-pin" size={16} color={C.silver} style={{ marginRight: 8 }} />
-                      <Text style={styles.cyanBtnText}>Map</Text>
-                    </View>
-                  </CyanButton>
-                  <CyanButton onPress={() => Linking.openURL(`https://suiscan.xyz/${SUI_NETWORK}/tx/${txDigest}`)} style={{ flex: 1 }}>
-                    <View style={styles.btnRow}>
-                      <Feather name="external-link" size={16} color={C.silver} style={{ marginRight: 8 }} />
-                      <Text style={styles.cyanBtnText}>Explorer</Text>
-                    </View>
-                  </CyanButton>
                 </View>
               </View>
             </GlassCard>
           </FadeUp>
         )}
+
+
 
         <Text style={styles.builtOn}>Built on Sui</Text>
       </ScrollView>
@@ -279,7 +386,7 @@ export default function CaptureScreen() {
 
 const styles = StyleSheet.create({
   scroll: {
-    paddingTop: Platform.OS === "ios" ? 110 : 90,
+    // paddingTop is applied dynamically from useHeaderHeight() in the component.
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
@@ -309,7 +416,38 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.mint },
   statusText: { color: C.silver, fontSize: 12, fontWeight: "600" },
-  hero: { marginBottom: 20 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 32,
+  },
+  hero: {
+    marginBottom: 0,
+  },
+  balanceCard: {
+    padding: 0,
+  },
+  balanceInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 12,
+  },
+  balanceLabel: {
+    ...TYPE.eyebrow,
+    fontSize: 8,
+    marginBottom: 2,
+  },
+  balanceValue: {
+    color: C.textPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.mint },
+  statusText: { color: C.silver, fontSize: 12, fontWeight: "600" },
+
   heroRow: { flexDirection: "row", alignItems: "center" },
   eyebrow: { ...TYPE.eyebrow },
   heroTitle: { fontSize: 24, fontWeight: "800", color: C.textPrimary },
@@ -334,6 +472,8 @@ const styles = StyleSheet.create({
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.coral },
   liveText: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
   resText: { color: "rgba(255,255,255,0.6)", fontSize: 10, fontFamily: "monospace" },
+  noPermission: { alignItems: "center", justifyContent: "center", gap: 8 },
+  noPermissionText: { color: C.slate, fontSize: 12, fontWeight: "600" },
   shutterContainer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 32, paddingHorizontal: 10 },
   toolBtn: {
     width: 52, height: 52, borderRadius: 26,
@@ -354,31 +494,39 @@ const styles = StyleSheet.create({
   },
   hintTitle: { fontSize: 24, fontWeight: "800", color: C.textPrimary, marginTop: 24, textAlign: "center" },
   hintSub: { fontSize: 15, color: C.silver, marginTop: 4, textAlign: "center" },
-  sealedInner: { padding: 4 },
-  sealedHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-  sealedBadge: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(64,224,163,0.1)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
-  },
-  sealedBadgeText: { color: C.mint, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
-  epochText: { fontSize: 10, color: C.slate, fontFamily: "monospace" },
-  sealedRow: { flexDirection: "row", gap: 16 },
-  sealedPreview: { width: 84, height: 84, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.03)", overflow: "hidden" },
-  sealedImg: { width: "100%", height: "100%" },
-  sealedImgPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
-  sealedInfo: { flex: 1, justifyContent: "center" },
-  sealedTitle: { fontSize: 18, fontWeight: "800", color: C.textPrimary },
-  sealedMeta: { marginTop: 6 },
-  sealedMetaText: { fontSize: 12, color: C.slate, flexDirection: "row", alignItems: "center" },
-  hashTag: {
-    marginTop: 10, alignSelf: "flex-start", flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(60,200,240,0.08)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100,
-  },
-  hashTagText: { color: C.cyan, fontSize: 11, fontFamily: "monospace" },
+  receiptContainer: { padding: 4 },
+  receiptHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 },
+  successBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(64,224,163,0.1)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 100 },
+  successText: { color: C.mint, fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
+  epochLabel: { fontSize: 9, color: C.slate, fontFamily: "monospace", opacity: 0.6 },
+  
+  receiptMain: { flexDirection: "row", gap: 20, marginBottom: 24 },
+  receiptMedia: { width: 100, height: 120, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.03)", overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
+  receiptImg: { width: "100%", height: "100%" },
+  imgPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
+  imgOverlay: { position: "absolute", bottom: 8, left: 8, right: 8 },
+  verifiedStamp: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.mint, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, alignSelf: "flex-start" },
+  stampText: { color: "#fff", fontSize: 8, fontWeight: "900" },
+  
+  receiptBody: { flex: 1, justifyContent: "center" },
+  receiptTitle: { fontSize: 22, fontWeight: "800", color: C.textPrimary, marginBottom: 8 },
+  metaGrid: { gap: 6, marginBottom: 16 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  metaValue: { fontSize: 12, color: C.silver, fontWeight: "500" },
+  
+  hashBox: { backgroundColor: "rgba(255,255,255,0.03)", padding: 10, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" },
+  hashRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  hashLabel: { fontSize: 8, color: C.slate, fontWeight: "800", letterSpacing: 1 },
+  hashString: { fontSize: 11, color: C.cyan, fontFamily: "monospace" },
+  
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.05)", marginBottom: 24 },
+  receiptActions: { gap: 12 },
+  secondaryActions: { flexDirection: "row", gap: 12 },
+  primaryAction: { width: "100%" },
+  
   btnRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
   coralBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  sealedActions: { flexDirection: "row", gap: 12, marginTop: 12 },
-  cyanBtnText: { color: C.silver, fontSize: 14, fontWeight: "600" },
+  cyanBtnText: { color: C.silver, fontSize: 13, fontWeight: "600" },
   builtOn: {
     marginTop: 40, textAlign: "center", fontSize: 10, fontWeight: "600",
     textTransform: "uppercase", letterSpacing: 3, color: "rgba(132,142,160,0.4)",

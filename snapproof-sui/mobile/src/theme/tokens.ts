@@ -72,11 +72,14 @@ export const SHADOWS = {
 /** Typography */
 export const TYPE = {
   eyebrow: {
-    fontSize: 10,
+    // Bumped from 10px/C.slate to 11px/C.silver for WCAG 1.4.3:
+    // on composited glass surface, contrast rose from ~5.6:1 → ~10.4:1
+    // and the physical size clears the small-text legibility floor.
+    fontSize: 11,
     fontWeight: "600" as const,
     textTransform: "uppercase" as const,
     letterSpacing: 2,
-    color: C.slate,
+    color: C.silver,
   },
   heroTitle: {
     fontSize: 38,

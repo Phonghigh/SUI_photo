@@ -62,7 +62,7 @@ async function writeRaw(value: string): Promise<void> {
   }
 }
 
-export async function loadSettings(): Promise<AppSettings> {
+export async function getSettings(): Promise<AppSettings> {
   const raw = await readRaw();
   if (!raw) return { ...DEFAULTS };
   try {
@@ -73,10 +73,10 @@ export async function loadSettings(): Promise<AppSettings> {
   }
 }
 
-export async function saveSettings(
+export async function updateSettings(
   patch: Partial<AppSettings>
 ): Promise<AppSettings> {
-  const current = await loadSettings();
+  const current = await getSettings();
   const next = { ...current, ...patch };
   await writeRaw(JSON.stringify(next));
   return next;

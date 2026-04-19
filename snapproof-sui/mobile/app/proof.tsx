@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { GlowBackground, GlassCard, CyanButton, CoralButton } from "../src/components/Glass";
 import { C, TYPE } from "../src/theme/tokens";
 import { FadeUp } from "../src/components/FadeUp";
@@ -22,6 +23,7 @@ import type { ProofData } from "../src/types/proof";
 export default function ProofDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const headerHeight = useHeaderHeight();
   const [proof, setProof] = useState<ProofData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -74,7 +76,13 @@ export default function ProofDetailScreen() {
           headerTransparent: true,
           headerTitle: "",
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.backBtn}
+              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
               <Feather name="arrow-left" size={20} color={C.silver} />
             </TouchableOpacity>
           ),
@@ -86,7 +94,10 @@ export default function ProofDetailScreen() {
         }}
       />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingTop: headerHeight + 16 }]}
+        showsVerticalScrollIndicator={false}
+      >
         
         <FadeUp delay={0}>
           <View style={styles.hero}>
@@ -103,7 +114,17 @@ export default function ProofDetailScreen() {
           <GlassCard tone="cyan" radius={24} noPad>
             <View style={styles.imageContainer}>
               {imageUrl ? (
-                <Image source={{ uri: imageUrl }} style={styles.image} />
+                <Image
+                  source={{ uri: imageUrl }}
+                  style={styles.image}
+                  accessible={true}
+                  accessibilityRole="image"
+                  accessibilityLabel={
+                    proof?.createdAt
+                      ? `Sealed photo, captured on ${new Date(proof.createdAt).toLocaleString()}`
+                      : "Sealed photo preview"
+                  }
+                />
               ) : (
                 <View style={styles.placeholder}>
                   <Feather name="image" size={32} color={C.slate} />
@@ -171,7 +192,7 @@ export default function ProofDetailScreen() {
 
 const styles = StyleSheet.create({
   scroll: {
-    paddingTop: Platform.OS === "ios" ? 110 : 90,
+    // paddingTop is applied dynamically from useHeaderHeight() in the component.
     paddingHorizontal: 20,
     paddingBottom: 40,
   },

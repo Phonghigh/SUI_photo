@@ -66,7 +66,7 @@ Create `mobile/.env`. Expo will expose only variables prefixed `EXPO_PUBLIC_`:
 
 ```
 EXPO_PUBLIC_SUI_NETWORK=testnet
-EXPO_PUBLIC_PROOF_PACKAGE_ID=0x8cb3e3d082971bde081c3af6b794fa3748cc454985cdc98140c20892a5cd3321
+EXPO_PUBLIC_PROOF_PACKAGE_ID=0xf8f5963973c4ca34720937a070eb3e070851f50a2408092496d588574108bf2c
 EXPO_PUBLIC_WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
 EXPO_PUBLIC_WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
 EXPO_PUBLIC_BACKEND_URL=http://localhost:3001

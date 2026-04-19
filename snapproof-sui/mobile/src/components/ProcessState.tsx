@@ -40,7 +40,7 @@ export const ProcessState = ({
       case "shield":
         return <Feather name="shield" size={32} color={C.mint} />;
       case "sparkles":
-        return <Feather name="sparkles" size={32} color={C.coral} />;
+        return <Ionicons name="sparkles" size={32} color={C.coral} />;
       default:
         return <Text style={styles.iconText}>{icon}</Text>;
     }

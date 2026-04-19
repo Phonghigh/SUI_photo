@@ -13,6 +13,7 @@ import {
 import { Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { useHeaderHeight } from "@react-navigation/elements";
 import {
   getOutboxQueue,
   removeOutboxItem,
@@ -25,6 +26,7 @@ import { FadeUp } from "../src/components/FadeUp";
 
 export default function OutboxScreen() {
   const router = useRouter();
+  const headerHeight = useHeaderHeight();
   const [queue, setQueue] = useState<OutboxItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -67,7 +69,13 @@ export default function OutboxScreen() {
       <GlassCard radius={20} style={styles.card} noPad>
         <View style={styles.cardInner}>
           <View style={styles.thumbnailWrap}>
-            <Image source={{ uri: item.imageUri }} style={styles.thumbnail} />
+            <Image
+              source={{ uri: item.imageUri }}
+              style={styles.thumbnail}
+              accessible={true}
+              accessibilityRole="image"
+              accessibilityLabel={`Queued proof thumbnail, status: ${item.status}`}
+            />
             {item.status === "failed" && (
               <View style={styles.errorOverlay}>
                 <Feather name="alert-circle" size={16} color="#fff" />
@@ -123,14 +131,20 @@ export default function OutboxScreen() {
           headerTransparent: true,
           headerTitle: "",
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.backBtn}
+              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
               <Feather name="arrow-left" size={20} color={C.silver} />
             </TouchableOpacity>
           ),
         }}
       />
 
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: headerHeight + 16 }]}>
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>Submission Queue</Text>
@@ -186,7 +200,7 @@ export default function OutboxScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: Platform.OS === "ios" ? 110 : 90,
+    // paddingTop is applied dynamically from useHeaderHeight() in the component.
   },
   backBtn: {
     width: 40, height: 40, borderRadius: 20,

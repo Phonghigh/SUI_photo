@@ -5,6 +5,7 @@ Documentation for SnapProof is split into two tracks based on who's reading.
 ## Start here
 
 - [`PROJECT.md`](./PROJECT.md) — end-to-end project documentation: the problem SnapProof resolves, the real-world scenarios it handles, the Sui features it applies today, the pain points that still need work, and the Sui capabilities that can close those gaps. Best single document for anyone evaluating the project from scratch.
+- [`ARCHITECTURE_AND_WORKFLOWS.md`](./ARCHITECTURE_AND_WORKFLOWS.md) — detailed architecture (per-tier responsibilities, data model, deployment topology) and every workflow end to end (capture, verify, map, outbox, wallet bootstrap, backend, indexer, web verifier) with sequence diagrams, failure modes, and ADR-style design decisions.
 
 ## Overview track (for non-developers)
 

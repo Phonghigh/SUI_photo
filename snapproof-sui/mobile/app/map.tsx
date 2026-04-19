@@ -8,20 +8,30 @@ import {
   ScrollView,
   Animated,
 } from "react-native";
-import { Stack, Link } from "expo-router";
+import { Stack, Link, useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { GlassCard, GlowBackground } from "../src/components/Glass";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlassCard, GlowBackground, StatusPill, PageHeader } from "../src/components/Glass";
 import { C, TYPE } from "../src/theme/tokens";
 import { WorldMap, type Proof } from "../src/components/WorldMap";
 import { FadeUp } from "../src/components/FadeUp";
 import { getProofs } from "../src/services/sui";
 import { decodeGeohash } from "../src/utils/geohash";
+import { SUI_NETWORK } from "../src/config";
 import { track } from "../src/services/analytics";
 
 const FILTERS = ["All", "Verified", "Mine", "24h"] as const;
 
 export default function MapScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+
+
+  const networkLabel =
+    SUI_NETWORK.charAt(0).toUpperCase() + SUI_NETWORK.slice(1);
   const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("All");
   const [proofs, setProofs] = useState<Proof[]>([]);
   const [selected, setSelected] = useState<Proof | null>(null);
@@ -73,31 +83,16 @@ export default function MapScreen() {
       topColor="rgba(60,200,240,0.28)"
       bottomColor="rgba(240,86,110,0.22)"
     >
-      <Stack.Screen
-        options={{
-          headerTransparent: true,
-          headerTitle: "",
-          headerLeft: () => (
-            <Link href="/" asChild>
-              <TouchableOpacity style={styles.backBtn}>
-                <Feather name="arrow-left" size={20} color={C.silver} />
-              </TouchableOpacity>
-            </Link>
-          ),
-          headerRight: () => (
-            <View style={styles.statusChip}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Live</Text>
-            </View>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}
+
         showsVerticalScrollIndicator={false}
       >
+        <PageHeader title="Proof Map" />
+
         {/* 1. Hero Stats */}
         <FadeUp delay={60}>
           <View style={styles.hero}>
@@ -143,25 +138,33 @@ export default function MapScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterRow}
           >
-            {FILTERS.map((f) => (
-              <TouchableOpacity
-                key={f}
-                onPress={() => setActiveFilter(f)}
-                style={[
-                  styles.filterBtn,
-                  activeFilter === f && styles.filterBtnActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.filterBtnText,
-                    activeFilter === f && styles.filterBtnTextActive,
-                  ]}
+            {FILTERS.map((f) => {
+              const isActive = activeFilter === f;
+              return (
+                <TouchableOpacity
+                  key={f}
+                  onPress={() => setActiveFilter(f)}
+                  style={[styles.filterBtn, isActive && styles.filterBtnActive]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${f} filter`}
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityHint={
+                    isActive
+                      ? "Currently selected filter"
+                      : `Tap to filter proofs by ${f}`
+                  }
                 >
-                  {f}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.filterBtnText,
+                      isActive && styles.filterBtnTextActive,
+                    ]}
+                  >
+                    {f}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </FadeUp>
 
@@ -259,47 +262,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingTop: Platform.OS === "ios" ? 110 : 90,
     paddingHorizontal: 20,
     paddingBottom: 40,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(20,28,52,0.65)",
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 16,
-  },
-  backIcon: {
-    color: C.silver,
-    fontSize: 20,
-  },
-  statusChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 100,
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    backgroundColor: "rgba(20,28,52,0.65)",
-    marginRight: 16,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.mint,
-  },
-  statusText: {
-    color: C.silver,
-    fontSize: 12,
-    fontWeight: "600",
   },
   hero: {
     marginBottom: 24,
@@ -521,19 +485,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.cyanBorder,
     alignItems: "center",
-  },
-  explorerBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: C.cyan,
-  },
-  builtOn: {
-    marginTop: 40,
-    textAlign: "center",
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 3,
-    color: "rgba(132,142,160,0.4)",
   },
 });

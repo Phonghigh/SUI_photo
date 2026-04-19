@@ -103,21 +103,47 @@ export async function exportSecretKey(): Promise<string> {
 export async function requestTestnetTokens(): Promise<boolean> {
   try {
     const address = await getAddress();
-    const response = await fetch("https://faucet.testnet.sui.io/v1/gas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        FixedAmountRequest: { recipient: address },
-      }),
-    });
+    
+    const endpoints = [
+      "https://faucet.testnet.sui.io/v1/faucet",
+      "https://faucet.testnet.sui.io/v1/gas",
+      "https://faucet.testnet.sui.io/gas",
+      "https://faucet.testnet.chainode.tech/gas",
+      "https://faucet.suilearn.io/v1/gas"
+    ];
 
-    if (!response.ok) {
-      console.warn("Faucet request failed:", response.status);
-      return false;
+
+    const payloads = [
+      { FixedAmountRequest: { recipient: address } },
+      { recipient: address }
+    ];
+
+    for (const url of endpoints) {
+      for (const payload of payloads) {
+        try {
+          console.log(`Trying faucet: ${url} with payload type ${Object.keys(payload)[0]}`);
+          const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            console.log("Faucet success!", result);
+            return true;
+          } else {
+            const text = await response.text();
+            console.warn(`Faucet ${url} failed (${response.status}):`, text);
+          }
+        } catch (e) {
+          console.warn(`Faucet ${url} fetch error:`, e);
+        }
+      }
     }
+    return false;
 
-    console.log("Faucet tokens received for:", address);
-    return true;
+
   } catch (error) {
     console.warn("Faucet request error:", error);
     return false;

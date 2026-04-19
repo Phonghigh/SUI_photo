@@ -10,7 +10,7 @@ export const WALRUS_AGGREGATOR_URL =
 
 export const PROOF_PACKAGE_ID =
   process.env.NEXT_PUBLIC_PROOF_PACKAGE_ID ??
-  '0x8cb3e3d082971bde081c3af6b794fa3748cc454985cdc98140c20892a5cd3321';
+  '';
 
 export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';

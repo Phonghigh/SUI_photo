@@ -133,7 +133,7 @@ One subtle but important point: the `created_at` field on `PhotoProof` is **clie
 
 ### 4.7 Package publication and the upgrade capability
 
-The contract is published to Sui testnet at package `0x8cb3e3d082971bde081c3af6b794fa3748cc454985cdc98140c20892a5cd3321`. The publish returned an upgrade capability, recorded in `contracts/Published.toml`, which would be needed to preserve the package ID across a future `sui client upgrade`. The MVP does not use the upgrade path yet; the capability is held by the developer who ran `sui client publish` and is part of the project's disaster-recovery plan.
+The contract is published to Sui testnet at package `0xf8f5963973c4ca34720937a070eb3e070851f50a2408092496d588574108bf2c`. The publish returned an upgrade capability, recorded in `contracts/Published.toml`, which would be needed to preserve the package ID across a future `sui client upgrade`. The MVP does not use the upgrade path yet; the capability is held by the developer who ran `sui client publish` and is part of the project's disaster-recovery plan.
 
 ### 4.8 Explorer integration (SuiScan)
 

@@ -8,17 +8,18 @@ import {
   Platform,
   ScrollView,
   Linking,
-  TextInput,
 } from "react-native";
 import { useRouter, Stack, Link } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { GlowBackground, GlassCard, CoralButton, CyanButton } from "../src/components/Glass";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlowBackground, GlassCard, CoralButton, CyanButton, StatusPill, PageHeader } from "../src/components/Glass";
 import { C, TYPE } from "../src/theme/tokens";
 import { FadeUp } from "../src/components/FadeUp";
 import { ProcessState } from "../src/components/ProcessState";
 import { hashImage } from "../src/utils/hash";
-import { lookupProofByImageHash, getProofById } from "../src/services/sui";
+import { lookupProofByImageHash, getProofById, getProofs } from "../src/services/sui";
 import { SUI_NETWORK } from "../src/config";
 
 const SCAN_STEPS = [
@@ -27,13 +28,37 @@ const SCAN_STEPS = [
   { label: "Querying Sui", detail: "lookup" },
 ];
 
+const SAMPLES_FALLBACK = [
+  { id: "s1", label: "Example #412", meta: "Testnet · 2m ago", icon: "image" as const },
+  { id: "s2", label: "Example #411", meta: "Testnet · 5m ago", icon: "image" as const },
+];
+
 export default function VerifyScreen() {
+  const networkLabel =
+    SUI_NETWORK.charAt(0).toUpperCase() + SUI_NETWORK.slice(1);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+
   const [phase, setPhase] = useState<"idle" | "scanning" | "match" | "mismatch" | "not_found">("idle");
   const [step, setStep] = useState(0);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [computedHash, setComputedHash] = useState("");
   const [foundProof, setFoundProof] = useState<any>(null);
+  const [recentProofs, setRecentProofs] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadRecent();
+  }, []);
+
+  const loadRecent = async () => {
+    try {
+      const all = await getProofs(3);
+      setRecentProofs(all);
+    } catch {
+      /* fallback to empty or samples if needed */
+    }
+  };
 
   const startVerify = async (uri: string) => {
     setImageUri(uri);
@@ -82,25 +107,15 @@ export default function VerifyScreen() {
 
   return (
     <GlowBackground topColor="rgba(60,200,240,0.28)" bottomColor="rgba(240,86,110,0.18)">
-      <Stack.Screen
-        options={{
-          headerTransparent: true,
-          headerTitle: "",
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-              <Feather name="arrow-left" size={20} color={C.silver} />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.statusChip}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Live</Text>
-            </View>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
+
+        showsVerticalScrollIndicator={false}
+      >
+        <PageHeader title="Verify" />
+
         
         {phase === "idle" && (
           <>
@@ -126,41 +141,59 @@ export default function VerifyScreen() {
             </FadeUp>
 
             <FadeUp delay={120}>
-              <Text style={[styles.eyebrow, { marginTop: 24, marginBottom: 12 }]}>Try a sample</Text>
+              <Text style={[styles.eyebrow, { marginTop: 24, marginBottom: 12 }]}>Recent Proofs</Text>
               <GlassCard radius={20} noPad>
-                <TouchableOpacity style={styles.sampleRow} activeOpacity={0.7}>
-                  <View style={styles.sampleIcon}>
-                    <Feather name="image" size={16} color={C.mint} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sampleLabel}>Mountain sunrise.heic</Text>
-                    <Text style={styles.sampleMeta}>Sealed · 2m ago</Text>
-                  </View>
-                  <Text style={styles.verifyArrow}>verify →</Text>
-                </TouchableOpacity>
-                <View style={styles.divider} />
-                <TouchableOpacity style={styles.sampleRow} activeOpacity={0.7}>
-                  <View style={[styles.sampleIcon, { backgroundColor: "rgba(240,86,110,0.1)" }]}>
-                    <Feather name="alert-triangle" size={16} color={C.coral} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sampleLabel}>Press conference.jpg</Text>
-                    <Text style={styles.sampleMeta}>Edited · pixels altered</Text>
-                  </View>
-                  <Text style={styles.verifyArrow}>verify →</Text>
-                </TouchableOpacity>
+                {recentProofs.length > 0 ? (
+                  recentProofs.map((p, idx) => (
+                    <View key={p.id || idx}>
+                      <TouchableOpacity 
+                        style={styles.sampleRow} 
+                        activeOpacity={0.7}
+                        onPress={() => router.push({ pathname: "/proof", params: { id: p.id } })}
+                      >
+                        <View style={styles.sampleIcon}>
+                          <Feather name="shield" size={16} color={C.cyan} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.sampleLabel} numberOfLines={1}>Proof #{p.id?.slice(-6) || "..."}</Text>
+                          <Text style={styles.sampleMeta}>
+                            {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "Just now"} · Sui
+                          </Text>
+                        </View>
+                        <Feather name="chevron-right" size={14} color={C.slate} />
+                      </TouchableOpacity>
+                      {idx < recentProofs.length - 1 && <View style={styles.divider} />}
+                    </View>
+                  ))
+                ) : (
+                  SAMPLES_FALLBACK.map((s, idx) => (
+                    <View key={s.id}>
+                      <View style={styles.sampleRow}>
+                        <View style={styles.sampleIcon}>
+                          <Feather name={s.icon} size={16} color={C.slate} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.sampleLabel}>{s.label}</Text>
+                          <Text style={styles.sampleMeta}>{s.meta}</Text>
+                        </View>
+                      </View>
+                      {idx < SAMPLES_FALLBACK.length - 1 && <View style={styles.divider} />}
+                    </View>
+                  ))
+                )}
               </GlassCard>
             </FadeUp>
 
             <FadeUp delay={180}>
               <View style={styles.noteBox}>
-                <Feather name="sparkles" size={16} color={C.cyan} />
+                <Ionicons name="sparkles" size={16} color={C.cyan} />
                 <Text style={styles.noteText}>
                   We compare the photo's hash to the receipt sealed on <Text style={{ color: C.silver }}>Sui</Text>.
                   No upload to a server — verification runs locally.
                 </Text>
               </View>
             </FadeUp>
+
           </>
         )}
 
@@ -262,23 +295,11 @@ export default function VerifyScreen() {
 
 const styles = StyleSheet.create({
   scroll: {
-    paddingTop: Platform.OS === "ios" ? 110 : 90,
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(20,28,52,0.65)",
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 16,
-  },
-  backIcon: { color: C.silver, fontSize: 20 },
   statusChip: {
+
     flexDirection: "row",
     alignItems: "center",
     gap: 6,

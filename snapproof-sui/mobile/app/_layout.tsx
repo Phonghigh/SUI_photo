@@ -2,6 +2,7 @@ import "../src/polyfills";
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import NetInfo from "@react-native-community/netinfo";
 import { initAnalytics, track } from "../src/services/analytics";
 import { processQueue } from "../src/services/outbox";
@@ -28,7 +29,7 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="light" />
       <Stack
         screenOptions={{
@@ -45,6 +46,6 @@ export default function RootLayout() {
         <Stack.Screen name="outbox" options={{ title: "Outbox" }} />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />
       </Stack>
-    </>
+    </SafeAreaProvider>
   );
 }

@@ -4,7 +4,7 @@
  * implemented with expo-linear-gradient and the RN Animated API.
  */
 import React from "react";
-import { View, TouchableOpacity, StyleSheet, type ViewStyle, type StyleProp } from "react-native";
+import { View, TouchableOpacity, StyleSheet, Text, type ViewStyle, type StyleProp } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { C, SHADOWS } from "../theme/tokens";
 
@@ -98,9 +98,17 @@ interface CoralButtonProps {
 
 export function CoralButton({ children, onPress, style }: CoralButtonProps) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.86} style={style}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.86}
+      style={style}
+      accessibilityRole="button"
+    >
       <LinearGradient
-        colors={[C.coralGlow, C.coral, C.coralDeep]}
+        // Contrast-tuned: middle stop is coralDeep so white labels sitting
+        // at the visual center of the pill pass WCAG 1.4.3 (≈ 4.5:1).
+        // Top edge keeps coralGlow → coral for brand identity.
+        colors={[C.coralGlow, C.coralDeep, C.coralDeep]}
         locations={[0, 0.5, 1]}
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
@@ -123,7 +131,12 @@ export function CoralButton({ children, onPress, style }: CoralButtonProps) {
 
 export function CyanButton({ children, onPress, style }: CoralButtonProps) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.82} style={style}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.82}
+      style={style}
+      accessibilityRole="button"
+    >
       <View style={[s.cyanBtn, SHADOWS.cyan]}>
         <LinearGradient
           colors={["rgba(28,40,74,0.65)", "rgba(12,18,42,0.55)"]}
@@ -159,7 +172,9 @@ export function StatusPill({ network = "Sui", status = "Testnet" }: StatusPillPr
         <View style={s.statusDotPulse} />
         <View style={s.statusDot} />
       </View>
-      <View style={s.statusText}>{/* children injected by consumer */}</View>
+      <Text style={s.statusText}>
+        {network} <Text style={{ color: C.slate }}>· {status}</Text>
+      </Text>
     </View>
   );
 }
@@ -201,6 +216,40 @@ export function GlowBackground({
         pointerEvents="none"
       />
       {children}
+    </View>
+  );
+}
+
+// ─── PageHeader ──────────────────────────────────────────────────────────────
+
+interface PageHeaderProps {
+  title: string;
+  onBack?: () => void;
+}
+
+import { Feather } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+
+export function PageHeader({ title, onBack }: PageHeaderProps) {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const handleBack = onBack || (() => router.push("/"));
+
+  return (
+    <View style={[s.headerWrap, { paddingTop: insets.top + 10 }]}>
+      <TouchableOpacity 
+        onPress={handleBack} 
+        style={s.headerBackBtn}
+        activeOpacity={0.7}
+      >
+        <Feather name="arrow-left" size={22} color={C.silver} />
+      </TouchableOpacity>
+
+      <Text style={s.headerTitle}>{title}</Text>
+      
+      <StatusPill />
     </View>
   );
 }
@@ -294,7 +343,11 @@ const s = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: C.mint,
   },
-  statusText: {},
+  statusText: {
+    color: C.silver,
+    fontSize: 12,
+    fontWeight: "600",
+  },
 
   // GlowBackground
   bgWrap: { flex: 1, backgroundColor: C.bgDeep },
@@ -313,5 +366,31 @@ const s = StyleSheet.create({
     width: 400,
     height: 400,
     borderRadius: 200,
+  },
+  // PageHeader
+  headerWrap: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    backgroundColor: "transparent",
+    width: "100%",
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: -0.4,
+  },
+  headerBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
   },
 });

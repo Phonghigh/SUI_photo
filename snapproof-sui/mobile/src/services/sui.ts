@@ -162,6 +162,7 @@ export async function lookupProofByImageHash(
 export async function getProofs(limit = 20): Promise<ProofData[]> {
   try {
     const suiClient = getSuiClient();
+    console.log(`DEBUG SUI: Querying events for package ${PROOF_PACKAGE_ID}, limit ${limit}`);
     const events = await suiClient.queryEvents({
       query: {
         MoveEventType: `${PROOF_PACKAGE_ID}::snapproof::ProofCreated`,
@@ -170,7 +171,9 @@ export async function getProofs(limit = 20): Promise<ProofData[]> {
       order: "descending",
     });
 
+    console.log(`DEBUG SUI: Found ${events.data.length} events`);
     const results: ProofData[] = [];
+
     for (const event of events.data) {
       const parsed = event.parsedJson as any;
       results.push({
